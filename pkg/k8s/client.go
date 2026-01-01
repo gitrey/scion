@@ -21,27 +21,35 @@ var (
 )
 
 type Client struct {
-	dynamic   dynamic.Interface
-	Clientset kubernetes.Interface
-	Config    *rest.Config
+	dynamic        dynamic.Interface
+	Clientset      kubernetes.Interface
+	Config         *rest.Config
+	CurrentContext string
 }
 
 func NewClient(kubeconfigPath string) (*Client, error) {
 	var config *rest.Config
 	var err error
+	var currentContext string
 
+	// Always try to load via DeferredLoadingClientConfig to get metadata like current context
+	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
 	if kubeconfigPath != "" {
-		config, err = clientcmd.BuildConfigFromFlags("", kubeconfigPath)
-	} else {
-		// Fallback to in-cluster config or default load order
-		config, err = clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
-			clientcmd.NewDefaultClientConfigLoadingRules(),
-			&clientcmd.ConfigOverrides{},
-		).ClientConfig()
+		loadingRules.ExplicitPath = kubeconfigPath
 	}
+	configLoader := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
+		loadingRules,
+		&clientcmd.ConfigOverrides{},
+	)
 
+	config, err = configLoader.ClientConfig()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load kubeconfig: %w", err)
+	}
+
+	rawConfig, err := configLoader.RawConfig()
+	if err == nil {
+		currentContext = rawConfig.CurrentContext
 	}
 
 	dynClient, err := dynamic.NewForConfig(config)
@@ -55,9 +63,10 @@ func NewClient(kubeconfigPath string) (*Client, error) {
 	}
 
 	return &Client{
-		dynamic:   dynClient,
-		Clientset: clientset,
-		Config:    config,
+		dynamic:        dynClient,
+		Clientset:      clientset,
+		Config:         config,
+		CurrentContext: currentContext,
 	}, nil
 }
 

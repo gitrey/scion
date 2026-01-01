@@ -15,6 +15,7 @@ import (
 
 	"github.com/ptone/scion-agent/pkg/api"
 	"github.com/ptone/scion-agent/pkg/k8s"
+	"github.com/ptone/scion-agent/pkg/mutagen"
 	"golang.org/x/term"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -74,10 +75,45 @@ func (r *KubernetesRuntime) Run(ctx context.Context, config RunConfig) (string, 
 	}
 
 	if config.Workspace != "" {
-		fmt.Printf("  Syncing workspace (%s -> /workspace)...\n", config.Workspace)
-		err = r.syncContext(ctx, namespace, createdPod.Name, config.Workspace, "/workspace")
-		if err != nil {
-			return createdPod.Name, fmt.Errorf("failed to sync workspace: %w", err)
+		// Check for Mutagen
+		useMutagen := false
+		if mutagen.CheckInstalled() {
+			fmt.Println("  Mutagen detected. Initializing live sync session...")
+			if err := mutagen.StartDaemon(); err != nil {
+				fmt.Printf("  Warning: failed to start mutagen daemon: %s. Falling back to snapshot sync.\n", err)
+			} else {
+				// Construct the Mutagen Kubernetes URL.
+				// Format: kubernetes://<context>/<namespace>/<pod>/<container>:<path>
+				remoteURL := fmt.Sprintf("kubernetes://%s/%s/%s/agent:/workspace",
+					r.Client.CurrentContext, namespace, createdPod.Name)
+
+				// Create Sync
+				err = mutagen.CreateSync(
+					"scion-"+createdPod.Name,
+					config.Workspace,
+					remoteURL,
+					map[string]string{"scion-agent": createdPod.Name},
+				)
+				if err != nil {
+					fmt.Printf("  Warning: failed to create mutagen sync: %s. Falling back to snapshot sync.\n", err)
+				} else {
+					fmt.Println("  Waiting for initial sync to complete...")
+					if err := mutagen.WaitForSync("scion-"+createdPod.Name, 60*time.Second); err != nil {
+						fmt.Printf("  Warning: mutagen sync timed out or failed: %s. Proceeding, but sync may be incomplete.\n", err)
+					} else {
+						fmt.Println("  Mutagen sync active.")
+						useMutagen = true
+					}
+				}
+			}
+		}
+
+		if !useMutagen {
+			fmt.Printf("  Syncing workspace (%s -> /workspace)...\n", config.Workspace)
+			err = r.syncContext(ctx, namespace, createdPod.Name, config.Workspace, "/workspace")
+			if err != nil {
+				return createdPod.Name, fmt.Errorf("failed to sync workspace: %w", err)
+			}
 		}
 	}
 
@@ -290,6 +326,12 @@ func (r *KubernetesRuntime) Stop(ctx context.Context, id string) error {
 }
 
 func (r *KubernetesRuntime) Delete(ctx context.Context, id string) error {
+	// Terminate Mutagen Sync if exists
+	if mutagen.CheckInstalled() {
+		// We use the label selector we applied during creation
+		_ = mutagen.TerminateSync(fmt.Sprintf("scion-agent=%s", id))
+	}
+
 	namespace := r.DefaultNamespace
 	// 'id' is the pod name
 	err := r.Client.Clientset.CoreV1().Pods(namespace).Delete(ctx, id, metav1.DeleteOptions{})
