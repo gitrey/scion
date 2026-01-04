@@ -314,11 +314,35 @@ func TestEnvMerging(t *testing.T) {
 		env := base.Harnesses["gemini"].Env
 
 		if env["A"] != "1" || env["B"] != "3" || env["C"] != "4" {
-
 			t.Errorf("unexpected env after merge: %v", env)
-
 		}
-
 	}
+
+func TestMergeSettingsAuthSelectedType(t *testing.T) {
+	base := &Settings{
+		Harnesses: map[string]HarnessConfig{
+			"gemini": {
+				AuthSelectedType: "gemini-api-key",
+			},
+		},
+	}
+
+	overrideJSON := `{
+		"harnesses": {
+			"gemini": {
+				"auth_selectedType": "vertex-ai"
+			}
+		}
+	}`
+
+	err := MergeSettings(base, []byte(overrideJSON))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if base.Harnesses["gemini"].AuthSelectedType != "vertex-ai" {
+		t.Errorf("expected AuthSelectedType to be vertex-ai, got %s", base.Harnesses["gemini"].AuthSelectedType)
+	}
+}
 
 	

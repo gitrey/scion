@@ -148,13 +148,21 @@ func ProvisionAgent(ctx context.Context, agentName string, templateName string, 
 		}
 	}
 
-	// Merge settings env if available
+	// Merge settings env and auth if available
 	if settings != nil && finalScionCfg.Harness != "" {
 		hConfig, err := settings.ResolveHarness(profileName, finalScionCfg.Harness)
-		if err == nil && hConfig.Env != nil {
+		if err == nil {
+			settingsCfg := &api.ScionConfig{}
+			if hConfig.Env != nil {
+				settingsCfg.Env = hConfig.Env
+			}
+			if hConfig.AuthSelectedType != "" {
+				settingsCfg.Gemini = &api.GeminiConfig{
+					AuthSelectedType: hConfig.AuthSelectedType,
+				}
+			}
 			// Template has highest priority, so it should override settings.
 			// We construct a config with ONLY the settings env, then merge finalScionCfg over it.
-			settingsCfg := &api.ScionConfig{Env: hConfig.Env}
 			finalScionCfg = config.MergeScionConfig(settingsCfg, finalScionCfg)
 		}
 	}

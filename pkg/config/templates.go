@@ -307,6 +307,14 @@ func MergeScionConfig(base, override *api.ScionConfig) *api.ScionConfig {
 			}
 		}
 	}
+	if override.Gemini != nil {
+		if result.Gemini == nil {
+			result.Gemini = &api.GeminiConfig{}
+		}
+		if override.Gemini.AuthSelectedType != "" {
+			result.Gemini.AuthSelectedType = override.Gemini.AuthSelectedType
+		}
+	}
 	if override.Info != nil {
 		if result.Info == nil {
 			infoCopy := *override.Info

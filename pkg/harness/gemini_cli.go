@@ -2,6 +2,7 @@ package harness
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -33,7 +34,7 @@ func (g *GeminiCLI) DiscoverAuth(agentHome string) api.AuthConfig {
 
 	home, _ := os.UserHomeDir()
 
-	// 1. Check agent settings (from template) first to see if they specify a type
+	// 1. Check agent settings (from template/provision) first to see if they specify a type
 	selectedType := ""
 	agentSettingsPath := filepath.Join(agentHome, g.DefaultConfigDir(), "settings.json")
 	if agentSettings, err := config.LoadAgentSettings(agentSettingsPath); err == nil {
@@ -50,16 +51,24 @@ func (g *GeminiCLI) DiscoverAuth(agentHome string) api.AuthConfig {
 		selectedType = hostSettings.Security.Auth.SelectedType
 	}
 
-	// 3. Fallback to settings.json for Gemini API Key if none found in env or agent settings
-	if auth.GeminiAPIKey == "" && auth.GoogleAPIKey == "" && hostSettings != nil && hostSettings.ApiKey != "" {
-		auth.GeminiAPIKey = hostSettings.ApiKey
-	}
-
-	// 4. Handle OAuth if selected
-	if selectedType == "oauth-personal" {
+	// 3. Populate auth based on selected type
+	switch selectedType {
+	case "gemini-api-key":
+		if auth.GeminiAPIKey == "" && auth.GoogleAPIKey == "" && hostSettings != nil && hostSettings.ApiKey != "" {
+			auth.GeminiAPIKey = hostSettings.ApiKey
+		}
+	case "oauth-personal":
 		oauthPath := filepath.Join(home, g.DefaultConfigDir(), "oauth_creds.json")
 		if _, err := os.Stat(oauthPath); err == nil {
 			auth.OAuthCreds = oauthPath
+		}
+	case "vertex-ai":
+		// Vertex might need project/location from env (already loaded) or settings
+		// but currently we only support env for project/location in DiscoverAuth
+	default:
+		// Fallback for backward compatibility or undefined type: try key
+		if auth.GeminiAPIKey == "" && auth.GoogleAPIKey == "" && hostSettings != nil && hostSettings.ApiKey != "" {
+			auth.GeminiAPIKey = hostSettings.ApiKey
 		}
 	}
 
@@ -185,6 +194,104 @@ func (g *GeminiCLI) HasSystemPrompt(agentHome string) bool {
 }
 
 func (g *GeminiCLI) Provision(ctx context.Context, agentName, agentHome, agentWorkspace string) error {
+	agentDir := filepath.Dir(agentHome)
+	scionAgentPath := filepath.Join(agentDir, "scion-agent.json")
+
+	data, err := os.ReadFile(scionAgentPath)
+	if err != nil {
+		return fmt.Errorf("failed to read scion-agent.json: %w", err)
+	}
+	var cfg api.ScionConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return fmt.Errorf("failed to parse scion-agent.json: %w", err)
+	}
+
+	selectedType := ""
+	if cfg.Gemini != nil {
+		selectedType = cfg.Gemini.AuthSelectedType
+	}
+
+	if selectedType == "" {
+		return nil
+	}
+
+	// Update ~/.gemini/settings.json
+	geminiSettingsPath := filepath.Join(agentHome, g.DefaultConfigDir(), "settings.json")
+	var agentSettings map[string]interface{}
+	sData, err := os.ReadFile(geminiSettingsPath)
+	if err == nil {
+		_ = json.Unmarshal(sData, &agentSettings)
+	}
+	if agentSettings == nil {
+		agentSettings = make(map[string]interface{})
+	}
+
+	if _, ok := agentSettings["security"]; !ok {
+		agentSettings["security"] = make(map[string]interface{})
+	}
+	sec := agentSettings["security"].(map[string]interface{})
+
+	if _, ok := sec["auth"]; !ok {
+		sec["auth"] = make(map[string]interface{})
+	}
+	auth := sec["auth"].(map[string]interface{})
+
+	auth["selectedType"] = selectedType
+
+	sData, _ = json.MarshalIndent(agentSettings, "", "  ")
+	if err := os.MkdirAll(filepath.Dir(geminiSettingsPath), 0755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(geminiSettingsPath, sData, 0644); err != nil {
+		return fmt.Errorf("failed to update gemini settings: %w", err)
+	}
+
+	// Update scion-agent.json
+	var envUpdates map[string]string
+	var volUpdates []api.VolumeMount
+
+	home, _ := os.UserHomeDir()
+
+	switch selectedType {
+	case "gemini-api-key":
+		envUpdates = map[string]string{"GEMINI_API_KEY": ""}
+	case "oauth-personal":
+		envUpdates = map[string]string{"GOOGLE_CLOUD_PROJECT": ""}
+	case "vertex-ai":
+		envUpdates = map[string]string{
+			"GOOGLE_CLOUD_PROJECT":  "",
+			"GOOGLE_CLOUD_LOCATION": "",
+		}
+		volUpdates = append(volUpdates, api.VolumeMount{
+			Source:   filepath.Join(home, ".config", "gcloud"),
+			Target:   "/home/node/.config/gcloud",
+			ReadOnly: true,
+		})
+	}
+
+	if len(envUpdates) > 0 {
+		if cfg.Env == nil {
+			cfg.Env = make(map[string]string)
+		}
+		for k, v := range envUpdates {
+			if _, exists := cfg.Env[k]; !exists {
+				cfg.Env[k] = v
+			}
+		}
+	}
+
+	if len(volUpdates) > 0 {
+		cfg.Volumes = append(cfg.Volumes, volUpdates...)
+	}
+
+	newData, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal updated config: %w", err)
+	}
+	if err := os.WriteFile(scionAgentPath, newData, 0644); err != nil {
+		return fmt.Errorf("failed to write updated scion-agent.json: %w", err)
+	}
+
 	return nil
 }
 

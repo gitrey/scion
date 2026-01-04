@@ -252,6 +252,8 @@ func buildAgentEnv(scionCfg *api.ScionConfig, extraEnv map[string]string) []stri
 				// Inherit from host environment
 				if hostVal, exists := os.LookupEnv(k); exists {
 					v = hostVal
+				} else {
+					fmt.Fprintf(os.Stderr, "Warning: environment variable %q is defined in settings/config but has no value in host environment.\n", k)
 				}
 			}
 			agentEnv = append(agentEnv, fmt.Sprintf("%s=%s", k, v))

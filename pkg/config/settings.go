@@ -15,15 +15,17 @@ type RuntimeConfig struct {
 }
 
 type HarnessConfig struct {
-	Image string            `json:"image"`
-	User  string            `json:"user"`
-	Env   map[string]string `json:"env,omitempty"`
+	Image            string            `json:"image"`
+	User             string            `json:"user"`
+	Env              map[string]string `json:"env,omitempty"`
+	AuthSelectedType string            `json:"auth_selectedType,omitempty"`
 }
 
 type HarnessOverride struct {
-	Image string            `json:"image,omitempty"`
-	User  string            `json:"user,omitempty"`
-	Env   map[string]string `json:"env,omitempty"`
+	Image            string            `json:"image,omitempty"`
+	User             string            `json:"user,omitempty"`
+	Env              map[string]string `json:"env,omitempty"`
+	AuthSelectedType string            `json:"auth_selectedType,omitempty"`
 }
 
 type ProfileConfig struct {
@@ -86,6 +88,9 @@ func (s *Settings) ResolveHarness(profileName, harnessName string) (HarnessConfi
 			}
 			if override.User != "" {
 				result.User = override.User
+			}
+			if override.AuthSelectedType != "" {
+				result.AuthSelectedType = override.AuthSelectedType
 			}
 			if override.Env != nil {
 				result.Env = mergeMaps(result.Env, override.Env)
@@ -210,6 +215,9 @@ func MergeSettings(base *Settings, data []byte) error {
 			if v.User != "" {
 				existing.User = v.User
 			}
+			if v.AuthSelectedType != "" {
+				existing.AuthSelectedType = v.AuthSelectedType
+			}
 			if v.Env != nil {
 				existing.Env = mergeMaps(existing.Env, v.Env)
 			}
@@ -242,6 +250,9 @@ func MergeSettings(base *Settings, data []byte) error {
 					}
 					if hv.User != "" {
 						hov.User = hv.User
+					}
+					if hv.AuthSelectedType != "" {
+						hov.AuthSelectedType = hv.AuthSelectedType
 					}
 					if hv.Env != nil {
 						hov.Env = mergeMaps(hov.Env, hv.Env)

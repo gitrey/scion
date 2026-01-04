@@ -1,10 +1,15 @@
 package harness
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
+
+	"github.com/ptone/scion-agent/pkg/api"
+	"github.com/ptone/scion-agent/pkg/config"
 )
 
 func TestGeminiDiscoverAuth(t *testing.T) {
@@ -180,5 +185,71 @@ func TestGeminiGetCommand(t *testing.T) {
 	expected = []string{"gemini", "--yolo", "--resume"}
 	if !reflect.DeepEqual(cmd, expected) {
 		t.Errorf("expected %v, got %v", expected, cmd)
+	}
+}
+
+func TestGeminiProvision(t *testing.T) {
+	// Setup temp agent structure
+	agentHome, err := os.MkdirTemp("", "agent-home-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(agentHome)
+
+	agentDir := filepath.Dir(agentHome)
+
+	// Write initial scion-agent.json
+	initialConfig := `{
+		"gemini": {
+			"auth_selectedType": "vertex-ai"
+		}
+	}`
+	scionPath := filepath.Join(agentDir, "scion-agent.json")
+	if err := os.WriteFile(scionPath, []byte(initialConfig), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	g := &GeminiCLI{}
+	if err := g.Provision(nil, "test-agent", agentHome, ""); err != nil {
+		t.Fatalf("Provision failed: %v", err)
+	}
+
+	// 1. Verify ~/.gemini/settings.json
+	settingsPath := filepath.Join(agentHome, ".gemini", "settings.json")
+	if _, err := os.Stat(settingsPath); os.IsNotExist(err) {
+		t.Error("settings.json was not created")
+	}
+
+	agentSettings, err := config.LoadAgentSettings(settingsPath)
+	if err != nil {
+		t.Errorf("failed to load generated settings: %v", err)
+	}
+	if agentSettings.Security.Auth.SelectedType != "vertex-ai" {
+		t.Errorf("expected selectedType vertex-ai, got %s", agentSettings.Security.Auth.SelectedType)
+	}
+
+	// 2. Verify scion-agent.json updates
+	data, err := os.ReadFile(scionPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var updatedCfg api.ScionConfig
+	if err := json.Unmarshal(data, &updatedCfg); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, ok := updatedCfg.Env["GOOGLE_CLOUD_PROJECT"]; !ok {
+		t.Error("expected GOOGLE_CLOUD_PROJECT in env")
+	}
+
+	hasGcloud := false
+	for _, v := range updatedCfg.Volumes {
+		if strings.Contains(v.Target, ".config/gcloud") {
+			hasGcloud = true
+			break
+		}
+	}
+	if !hasGcloud {
+		t.Error("expected .config/gcloud volume")
 	}
 }

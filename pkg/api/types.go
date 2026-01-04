@@ -29,6 +29,10 @@ type K8sResources struct {
 	Limits   map[string]string `json:"limits,omitempty"`
 }
 
+type GeminiConfig struct {
+	AuthSelectedType string `json:"auth_selectedType,omitempty"`
+}
+
 type ScionConfig struct {
 	Harness     string            `json:"harness,omitempty"`
 	ConfigDir   string            `json:"config_dir,omitempty"`
@@ -37,6 +41,7 @@ type ScionConfig struct {
 	Detached    *bool             `json:"detached"`
 	CommandArgs []string          `json:"command_args,omitempty"`
 	Kubernetes  *KubernetesConfig `json:"kubernetes,omitempty"`
+	Gemini      *GeminiConfig     `json:"gemini,omitempty"`
 
 	// Info contains persisted metadata about the agent
 	Info *AgentInfo `json:"info,omitempty"`
