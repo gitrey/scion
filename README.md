@@ -14,6 +14,7 @@ Scion is a container-based orchestration tool designed to manage concurrent LLM-
 ## Documentation
 
 - **[Concepts](docs/concepts.md)**: Understanding Agents, Groves, Harnesses, and Runtimes.
+- **[Installation](docs/install.md)**: How to get Scion up and running.
 - **[CLI Reference](docs/reference/cli.md)**: Comprehensive guide to all Scion commands.
 - **[Configuration Reference](docs/scion-config-reference.md)**: Detailed `scion-agent.json` options.
 - **Guides**:
@@ -22,15 +23,12 @@ Scion is a container-based orchestration tool designed to manage concurrent LLM-
 
 ## Installation
 
-You can install Scion directly from the source using Go:
+See the **[Installation Guide](docs/install.md)** for detailed instructions.
 
+Quick start from source:
 ```bash
 go install github.com/ptone/scion-agent@latest
 ```
-
-Ensure that your `$GOPATH/bin` is in your system `$PATH`.
-
-You must have either the `docker` or `container`
 
 ## Quick Start
 

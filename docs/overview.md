@@ -15,10 +15,11 @@ Scion is a container-based orchestration tool designed to manage concurrent LLM-
 
 Scion is designed to be easy to start with.
 
-1.  **Initialize**: Run `scion init` in your project root to create a `.scion` directory.
-2.  **Start an Agent**: Use `scion start <agent-name> "<task>"` to launch an agent.
-3.  **Interact**: Use `scion attach <agent-name>` to interact with the agent's session, or `scion logs <agent-name>` to view its output.
-4.  **Resume**: Use `scion resume <agent-name>` to restart a stopped agent, preserving its state.
+1.  **Install**: Follow the [Installation Guide](install.md) to get Scion on your machine.
+2.  **Initialize**: Run `scion init` in your project root to create a `.scion` directory.
+3.  **Start an Agent**: Use `scion start <agent-name> "<task>"` to launch an agent.
+4.  **Interact**: Use `scion attach <agent-name>` to interact with the agent's session, or `scion logs <agent-name>` to view its output.
+5.  **Resume**: Use `scion resume <agent-name>` to restart a stopped agent, preserving its state.
 
 ## Architecture
 
