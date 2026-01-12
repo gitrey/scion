@@ -77,7 +77,7 @@ func (o *OpenCode) GetVolumes(unixUsername string, auth api.AuthConfig) []api.Vo
 }
 
 func (o *OpenCode) DefaultConfigDir() string {
-	return ""
+	return ".config/opencode"
 }
 
 func (o *OpenCode) HasSystemPrompt(agentHome string) bool {

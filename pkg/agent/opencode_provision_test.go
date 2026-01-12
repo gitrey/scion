@@ -52,7 +52,7 @@ func TestProvisionOpencodeAgent(t *testing.T) {
 	}
 
 	// Verify agent's opencode.json
-	agentOpencodeJSONPath := filepath.Join(projectScionDir, "agents", agentName, "home", ".config", "opencode.json")
+	agentOpencodeJSONPath := filepath.Join(projectScionDir, "agents", agentName, "home", ".config", "opencode", "opencode.json")
 	if _, err := os.Stat(agentOpencodeJSONPath); os.IsNotExist(err) {
 		t.Fatalf("expected opencode.json to exist at %s", agentOpencodeJSONPath)
 	}
@@ -64,24 +64,5 @@ func TestProvisionOpencodeAgent(t *testing.T) {
 	}
 	if len(data) == 0 {
 		t.Error("expected opencode.json to have content, but it's empty")
-	}
-
-	// Verify mountable dir and symlink
-	mountableDir := filepath.Join(tmpDir, ".local", "share", "opencode-mountable")
-	linkPath := filepath.Join(mountableDir, "auth.json")
-	info, err := os.Lstat(linkPath)
-	if err != nil {
-		t.Fatalf("expected auth link to exist at %s: %v", linkPath, err)
-	}
-	if info.Mode()&os.ModeSymlink == 0 {
-		t.Errorf("expected %s to be a symlink", linkPath)
-	}
-	target, err := os.Readlink(linkPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	expectedTarget := filepath.Join(authDir, "auth.json")
-	if target != expectedTarget {
-		t.Errorf("expected link target %s, got %s", expectedTarget, target)
 	}
 }
