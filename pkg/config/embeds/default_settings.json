@@ -38,9 +38,9 @@
     },
     "remote": {
       "runtime": "kubernetes",
-      "tmux": false,
+      "tmux": true,
       "harness_overrides": {
-        }
+      }
     }
   }
 }
