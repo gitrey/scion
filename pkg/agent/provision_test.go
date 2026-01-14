@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/ptone/scion-agent/pkg/config"
@@ -337,7 +336,7 @@ func TestProvisionAgentWorkdirFlag(t *testing.T) {
 		t.Error("expected /workspace volume mount not found in config")
 	}
 
-	// 3. Test --workdir fails in git repo
+	// 3. Test --workdir succeeds in git repo
 	gitDir := filepath.Join(tmpDir, "git-repo")
 	os.MkdirAll(gitDir, 0755)
 	runCmd(t, gitDir, "git", "init")
@@ -355,10 +354,27 @@ func TestProvisionAgentWorkdirFlag(t *testing.T) {
 		t.Fatalf("InitProject failed: %v", err)
 	}
 
-	_, _, _, err = ProvisionAgent(context.Background(), "git-agent", "gemini", "", gitScionDir, "", "", "", customWorkdir)
-	if err == nil {
-		t.Error("expected error when using --workdir in a git repository, got nil")
-	} else if !strings.Contains(err.Error(), "--workdir cannot be used") {
-		t.Errorf("expected error message to contain '--workdir cannot be used', got: %v", err)
+	var ws string
+	_, ws, cfg, err = ProvisionAgent(context.Background(), "git-agent", "gemini", "", gitScionDir, "", "", "", customWorkdir)
+	if err != nil {
+		t.Fatalf("expected no error when using --workdir in a git repository, got: %v", err)
+	}
+
+	if ws != "" {
+		t.Errorf("expected empty workspace path (managed) for --workdir agent, got %q", ws)
+	}
+
+	found = false
+	for _, v := range cfg.Volumes {
+		if v.Target == "/workspace" {
+			found = true
+			evalSource, _ := filepath.EvalSymlinks(v.Source)
+			if evalSource != evalCustomWorkdir {
+				t.Errorf("expected volume source %q, got %q", evalCustomWorkdir, evalSource)
+			}
+		}
+	}
+	if !found {
+		t.Error("expected /workspace volume mount not found in config in git repo")
 	}
 }

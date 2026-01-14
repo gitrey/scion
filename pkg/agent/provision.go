@@ -74,9 +74,6 @@ func ProvisionAgent(ctx context.Context, agentName string, templateName string, 
 
 	// Verify .gitignore if in a repo
 	if isGit {
-		if workdir != "" {
-			return "", "", nil, fmt.Errorf("--workdir cannot be used when in a git repository")
-		}
 		// Find the projectDir relative to repo root if possible
 		root, err := util.RepoRootDir(projectDir)
 		if err == nil {
@@ -107,11 +104,59 @@ func ProvisionAgent(ctx context.Context, agentName string, templateName string, 
 		}
 	}
 
-	if isGit {
+	var workspaceSource string
+	shouldCreateWorktree := false
+
+	// Workspace Resolution Logic
+	if workdir != "" {
+		// Case 1: Explicit Workspace provided
+		// This overrides everything else. We mount this path directly.
+		absWorkdir, err := filepath.Abs(workdir)
+		if err != nil {
+			return "", "", nil, fmt.Errorf("failed to resolve absolute path for workdir %s: %w", workdir, err)
+		}
+		workspaceSource = absWorkdir
+		agentWorkspace = "" // We are not using the managed local workspace directory
+
+	} else if isGit {
+		// Case 2: Git Repository (and no explicit workdir)
+		targetBranch := branch
+		if targetBranch == "" {
+			targetBranch = agentName
+		}
+
+		// Check if we should use an existing worktree
+		usedExistingWorktree := false
+		if util.BranchExists(targetBranch) {
+			if existingPath, err := util.FindWorktreeByBranch(targetBranch); err == nil && existingPath != "" {
+				workspaceSource = existingPath
+				agentWorkspace = "" // Using external worktree
+				usedExistingWorktree = true
+				fmt.Printf("Warning: Relying on existing worktree for branch '%s' at '%s'\n", targetBranch, existingPath)
+			}
+		}
+
+		if !usedExistingWorktree {
+			shouldCreateWorktree = true
+			// agentWorkspace remains set to agents/<name>/workspace
+		}
+
+	} else {
+		// Case 3: Non-Git Repository (and no explicit workdir)
+		if groveName == "global" {
+			workspaceSource, _ = os.Getwd()
+		} else {
+			workspaceSource = filepath.Dir(projectDir)
+		}
+		agentWorkspace = "" // Using external mount
+	}
+
+	// Worktree Creation (if needed)
+	if shouldCreateWorktree {
 		// Remove existing workspace dir if it exists to allow worktree add
 		_ = util.MakeWritableRecursive(agentWorkspace)
 		os.RemoveAll(agentWorkspace)
-		// Prune worktrees to clean up any stale entries (e.g. from the directory we just removed)
+		// Prune worktrees to clean up any stale entries
 		_ = util.PruneWorktrees()
 
 		worktreeBranch := branch
@@ -122,10 +167,6 @@ func ProvisionAgent(ctx context.Context, agentName string, templateName string, 
 		if err := util.CreateWorktree(agentWorkspace, worktreeBranch); err != nil {
 			return "", "", nil, fmt.Errorf("failed to create git worktree: %w", err)
 		}
-	} else {
-		// In a non-git environment, we don't use a local workspace directory.
-		// Instead, we will mount the project root directly via scion-agent.json volumes.
-		agentWorkspace = ""
 	}
 
 	// 2. Load and copy templates
@@ -185,28 +226,13 @@ func ProvisionAgent(ctx context.Context, agentName string, templateName string, 
 		}
 	}
 
-	// For non-git repos, add a volume mount for the project root to /workspace
-	if !isGit {
-		var workspaceSource string
-		if workdir != "" {
-			var err error
-			workspaceSource, err = filepath.Abs(workdir)
-			if err != nil {
-				return "", "", nil, fmt.Errorf("failed to resolve absolute path for workdir %s: %w", workdir, err)
-			}
-		} else if groveName == "global" {
-			workspaceSource, _ = os.Getwd()
-		} else {
-			workspaceSource = filepath.Dir(projectDir)
-		}
-
-		if workspaceSource != "" {
-			finalScionCfg.Volumes = append(finalScionCfg.Volumes, api.VolumeMount{
-				Source:   workspaceSource,
-				Target:   "/workspace",
-				ReadOnly: false,
-			})
-		}
+	// Mount the resolved workspace if an external source was determined
+	if workspaceSource != "" {
+		finalScionCfg.Volumes = append(finalScionCfg.Volumes, api.VolumeMount{
+			Source:   workspaceSource,
+			Target:   "/workspace",
+			ReadOnly: false,
+		})
 	}
 
 	// Update agent-specific scion-agent.json

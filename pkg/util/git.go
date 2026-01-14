@@ -244,3 +244,10 @@ func FindWorktreeByBranch(branchName string) (string, error) {
 	}
 	return "", nil
 }
+
+// BranchExists returns true if the branch exists in the repository.
+func BranchExists(branchName string) bool {
+	cmd := exec.Command("git", "show-ref", "--verify", "--quiet", "refs/heads/"+branchName)
+	err := cmd.Run()
+	return err == nil
+}
