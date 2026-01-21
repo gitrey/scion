@@ -26,9 +26,9 @@ func TestInitProject_CreatesClaudeTemplate(t *testing.T) {
 		t.Errorf("Expected templates/claude to be created, but it was not")
 	}
 
-	// Verify a file inside templates/claude exists to be sure
-	claudeSettings := filepath.Join(claudeDir, "scion-agent.json")
+	// Verify a file inside templates/claude exists to be sure (now YAML)
+	claudeSettings := filepath.Join(claudeDir, "scion-agent.yaml")
 	if _, err := os.Stat(claudeSettings); os.IsNotExist(err) {
-		t.Errorf("Expected templates/claude/scion-agent.json to be created, but it was not")
+		t.Errorf("Expected templates/claude/scion-agent.yaml to be created, but it was not")
 	}
 }

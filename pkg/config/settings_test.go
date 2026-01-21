@@ -110,12 +110,12 @@ func TestUpdateSetting(t *testing.T) {
 		t.Fatalf("UpdateSetting failed: %v", err)
 	}
 
-	// Verify file content
-	content, err := os.ReadFile(filepath.Join(groveScionDir, "settings.json"))
+	// Verify file content (now writes YAML)
+	content, err := os.ReadFile(filepath.Join(groveScionDir, "settings.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(content), `"active_profile": "kubernetes"`) {
+	if !strings.Contains(string(content), "active_profile: kubernetes") {
 		t.Errorf("expected file to contain active_profile: kubernetes, got %s", string(content))
 	}
 
@@ -124,8 +124,8 @@ func TestUpdateSetting(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpdateSetting default_template failed: %v", err)
 	}
-	content, _ = os.ReadFile(filepath.Join(groveScionDir, "settings.json"))
-	if !strings.Contains(string(content), `"default_template": "my-template"`) {
+	content, _ = os.ReadFile(filepath.Join(groveScionDir, "settings.yaml"))
+	if !strings.Contains(string(content), "default_template: my-template") {
 		t.Errorf("expected file to contain default_template: my-template, got %s", string(content))
 	}
 }

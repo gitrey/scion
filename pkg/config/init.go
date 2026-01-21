@@ -9,34 +9,36 @@ import (
 	"runtime"
 
 	"github.com/ptone/scion-agent/pkg/api"
-	"github.com/ptone/scion-agent/pkg/util"
+	"gopkg.in/yaml.v3"
 )
 
 //go:embed all:embeds/*
 var EmbedsFS embed.FS
 
 func GetDefaultSettingsData() ([]byte, error) {
-	data, err := EmbedsFS.ReadFile("embeds/default_settings.json")
+	// Load embedded YAML defaults
+	data, err := EmbedsFS.ReadFile("embeds/default_settings.yaml")
 	if err != nil {
 		return nil, err
 	}
 
 	var settings Settings
-	// Use JSONC parser to support comments in the default settings file
-	if err := util.UnmarshalJSONC(data, &settings); err == nil {
-		if local, ok := settings.Profiles["local"]; ok {
-			if runtime.GOOS == "darwin" {
-				local.Runtime = "container"
-			} else {
-				local.Runtime = "docker"
-			}
-			settings.Profiles["local"] = local
-			if updated, err := json.MarshalIndent(settings, "", "  "); err == nil {
-				return updated, nil
-			}
-		}
+	if err := yaml.Unmarshal(data, &settings); err != nil {
+		return nil, err
 	}
-	return data, nil
+
+	// Apply OS-specific runtime adjustment for local profile
+	if local, ok := settings.Profiles["local"]; ok {
+		if runtime.GOOS == "darwin" {
+			local.Runtime = "container"
+		} else {
+			local.Runtime = "docker"
+		}
+		settings.Profiles["local"] = local
+	}
+
+	// Return JSON for backward compatibility with callers expecting JSON
+	return json.MarshalIndent(settings, "", "  ")
 }
 
 // SeedCommonFiles seeds the common files for a harness template.
@@ -77,9 +79,34 @@ func SeedCommonFiles(templateDir, genericEmbedDir, specificEmbedDir, configDirNa
 		return string(data)
 	}
 
-	// Try to read scion-agent.json from specific dir.
-	// readEmbed handles fallback to gemini if not found (except for opencode).
-	scionJSONStr := readEmbed(specificEmbedDir, "scion-agent.json")
+	// Helper to read scion-agent config, preferring YAML over JSON
+	readScionAgentConfig := func(dir string) string {
+		// Try YAML first
+		data, err := EmbedsFS.ReadFile(filepath.Join("embeds", dir, "scion-agent.yaml"))
+		if err == nil {
+			return string(data)
+		}
+		// Fall back to JSON
+		data, err = EmbedsFS.ReadFile(filepath.Join("embeds", dir, "scion-agent.json"))
+		if err == nil {
+			return string(data)
+		}
+		// Fallback to gemini if not found (except for opencode)
+		if dir != "opencode" {
+			data, err = EmbedsFS.ReadFile(filepath.Join("embeds", "gemini", "scion-agent.yaml"))
+			if err == nil {
+				return string(data)
+			}
+			data, err = EmbedsFS.ReadFile(filepath.Join("embeds", "gemini", "scion-agent.json"))
+			if err == nil {
+				return string(data)
+			}
+		}
+		return ""
+	}
+
+	// Read scion-agent config (YAML or JSON)
+	scionAgentConfigStr := readScionAgentConfig(specificEmbedDir)
 
 	// Seed template files
 	files := []struct {
@@ -87,7 +114,7 @@ func SeedCommonFiles(templateDir, genericEmbedDir, specificEmbedDir, configDirNa
 		content string
 		mode    os.FileMode
 	}{
-		{filepath.Join(templateDir, "scion-agent.json"), scionJSONStr, 0644},
+		{filepath.Join(templateDir, "scion-agent.yaml"), scionAgentConfigStr, 0644},
 		{filepath.Join(homeDir, "scion_tool.py"), readEmbed(genericEmbedDir, "scion_tool.py"), 0644},
 		{filepath.Join(homeDir, ".bashrc"), readEmbed(specificEmbedDir, "bashrc"), 0644},
 		{filepath.Join(homeDir, ".tmux.conf"), readEmbed(genericEmbedDir, ".tmux.conf"), 0644},
@@ -146,15 +173,21 @@ func InitProject(targetDir string, harnesses []api.Harness) error {
 	if err := os.MkdirAll(projectDir, 0755); err != nil {
 		return fmt.Errorf("failed to create settings directory: %w", err)
 	}
-	settingsPath := filepath.Join(projectDir, "settings.json")
-	if _, err := os.Stat(settingsPath); os.IsNotExist(err) {
-		// Seed with default settings
-		defaultSettings, err := GetDefaultSettingsData()
+	// Check if any settings file exists (YAML or JSON)
+	settingsPath := GetSettingsPath(projectDir)
+	if settingsPath == "" {
+		// No settings file exists, seed with default YAML settings
+		defaultSettings, err := GetDefaultSettingsDataYAML()
 		if err != nil {
-			return fmt.Errorf("failed to read default settings: %w", err)
+			// Fall back to JSON defaults
+			defaultSettings, err = GetDefaultSettingsData()
+			if err != nil {
+				return fmt.Errorf("failed to read default settings: %w", err)
+			}
 		}
-		if err := os.WriteFile(settingsPath, defaultSettings, 0644); err != nil {
-			return fmt.Errorf("failed to seed settings.json: %w", err)
+		newSettingsPath := filepath.Join(projectDir, "settings.yaml")
+		if err := os.WriteFile(newSettingsPath, defaultSettings, 0644); err != nil {
+			return fmt.Errorf("failed to seed settings.yaml: %w", err)
 		}
 	}
 
@@ -185,14 +218,20 @@ func InitGlobal(harnesses []api.Harness) error {
 	}
 
 	// Create global settings file if it doesn't exist
-	settingsPath := filepath.Join(globalDir, "settings.json")
-	if _, err := os.Stat(settingsPath); os.IsNotExist(err) {
-		defaultSettings, err := GetDefaultSettingsData()
+	settingsPath := GetSettingsPath(globalDir)
+	if settingsPath == "" {
+		// No settings file exists, seed with default YAML settings
+		defaultSettings, err := GetDefaultSettingsDataYAML()
 		if err != nil {
-			return fmt.Errorf("failed to read default settings: %w", err)
+			// Fall back to JSON defaults
+			defaultSettings, err = GetDefaultSettingsData()
+			if err != nil {
+				return fmt.Errorf("failed to read default settings: %w", err)
+			}
 		}
-		if err := os.WriteFile(settingsPath, defaultSettings, 0644); err != nil {
-			return fmt.Errorf("failed to seed global settings.json: %w", err)
+		newSettingsPath := filepath.Join(globalDir, "settings.yaml")
+		if err := os.WriteFile(newSettingsPath, defaultSettings, 0644); err != nil {
+			return fmt.Errorf("failed to seed global settings.yaml: %w", err)
 		}
 	}
 

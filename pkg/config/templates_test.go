@@ -48,9 +48,9 @@ func TestCreateTemplate(t *testing.T) {
 		t.Errorf("expected template directory %s to exist", expectedPath)
 	}
 
-	// Verify key files exist
+	// Verify key files exist (scion-agent is now YAML)
 	files := []string{
-		"scion-agent.json",
+		"scion-agent.yaml",
 		filepath.Join("home", ".bashrc"),
 		filepath.Join("home", ".gemini", "settings.json"),
 	}
@@ -176,11 +176,11 @@ func TestUpdateDefaultTemplates(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	geminiDefaultScionJSON := filepath.Join(projectDir, "templates", "gemini", "scion-agent.json")
-	
+	geminiDefaultScionYAML := filepath.Join(projectDir, "templates", "gemini", "scion-agent.yaml")
+
 	// Corrupt the default template file
 	corruptContent := "CORRUPT"
-	if err := os.WriteFile(geminiDefaultScionJSON, []byte(corruptContent), 0644); err != nil {
+	if err := os.WriteFile(geminiDefaultScionYAML, []byte(corruptContent), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -190,12 +190,12 @@ func TestUpdateDefaultTemplates(t *testing.T) {
 	}
 
 	// Verify it was restored
-	data, err := os.ReadFile(geminiDefaultScionJSON)
+	data, err := os.ReadFile(geminiDefaultScionYAML)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if string(data) == corruptContent {
-		t.Error("expected scion-agent.json to be overwritten, but it still contains corrupt content")
+		t.Error("expected scion-agent.yaml to be overwritten, but it still contains corrupt content")
 	}
 
 	// Verify settings.json content
@@ -312,9 +312,9 @@ func TestCloneTemplate(t *testing.T) {
 		t.Errorf("expected cloned template directory %s to exist", expectedPath)
 	}
 
-	// Verify key files exist in destination
+	// Verify key files exist in destination (scion-agent is now YAML)
 	files := []string{
-		"scion-agent.json",
+		"scion-agent.yaml",
 		filepath.Join("home", ".bashrc"),
 		filepath.Join("home", ".gemini", "settings.json"),
 	}

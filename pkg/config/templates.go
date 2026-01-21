@@ -8,6 +8,7 @@ import (
 
 	"github.com/ptone/scion-agent/pkg/api"
 	"github.com/ptone/scion-agent/pkg/util"
+	"gopkg.in/yaml.v3"
 )
 
 type Template struct {
@@ -16,8 +17,14 @@ type Template struct {
 }
 
 func (t *Template) LoadConfig() (*api.ScionConfig, error) {
-	path := filepath.Join(t.Path, "scion-agent.json")
-	data, err := os.ReadFile(path)
+	// Try YAML first, then JSON
+	configPath := GetScionAgentConfigPath(t.Path)
+	if configPath == "" {
+		// No config file found, return empty config
+		return &api.ScionConfig{}, nil
+	}
+
+	data, err := os.ReadFile(configPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return &api.ScionConfig{}, nil
@@ -26,8 +33,15 @@ func (t *Template) LoadConfig() (*api.ScionConfig, error) {
 	}
 
 	var cfg api.ScionConfig
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		return nil, err
+	ext := filepath.Ext(configPath)
+	if ext == ".yaml" || ext == ".yml" {
+		if err := yaml.Unmarshal(data, &cfg); err != nil {
+			return nil, fmt.Errorf("failed to parse YAML config %s: %w", configPath, err)
+		}
+	} else {
+		if err := json.Unmarshal(data, &cfg); err != nil {
+			return nil, fmt.Errorf("failed to parse JSON config %s: %w", configPath, err)
+		}
 	}
 	return &cfg, nil
 }

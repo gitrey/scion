@@ -8,42 +8,44 @@ import (
 
 	"github.com/ptone/scion-agent/pkg/api"
 	"github.com/ptone/scion-agent/pkg/util"
+	"gopkg.in/yaml.v3"
 )
 
-// Note: Settings files support JSONC format (JSON with comments and trailing commas).
-// Use util.UnmarshalJSONC for parsing user-editable config files.
+// Note: Settings files support YAML (preferred) and JSONC formats.
+// YAML files (.yaml/.yml) are checked first, then JSON (.json).
+// Environment variables with SCION_ prefix override top-level settings.
 
 type RuntimeConfig struct {
-	Host      string            `json:"host,omitempty"`
-	Context   string            `json:"context,omitempty"`
-	Namespace string            `json:"namespace,omitempty"`
-	Tmux      *bool             `json:"tmux,omitempty"`
-	Env       map[string]string `json:"env,omitempty"`
-	Sync      string            `json:"sync,omitempty"`
+	Host      string            `json:"host,omitempty" yaml:"host,omitempty" koanf:"host"`
+	Context   string            `json:"context,omitempty" yaml:"context,omitempty" koanf:"context"`
+	Namespace string            `json:"namespace,omitempty" yaml:"namespace,omitempty" koanf:"namespace"`
+	Tmux      *bool             `json:"tmux,omitempty" yaml:"tmux,omitempty" koanf:"tmux"`
+	Env       map[string]string `json:"env,omitempty" yaml:"env,omitempty" koanf:"env"`
+	Sync      string            `json:"sync,omitempty" yaml:"sync,omitempty" koanf:"sync"`
 }
 
 type HarnessConfig struct {
-	Image            string            `json:"image"`
-	User             string            `json:"user"`
-	Env              map[string]string `json:"env,omitempty"`
-	Volumes          []api.VolumeMount `json:"volumes,omitempty"`
-	AuthSelectedType string            `json:"auth_selectedType,omitempty"`
+	Image            string            `json:"image" yaml:"image" koanf:"image"`
+	User             string            `json:"user" yaml:"user" koanf:"user"`
+	Env              map[string]string `json:"env,omitempty" yaml:"env,omitempty" koanf:"env"`
+	Volumes          []api.VolumeMount `json:"volumes,omitempty" yaml:"volumes,omitempty" koanf:"volumes"`
+	AuthSelectedType string            `json:"auth_selectedType,omitempty" yaml:"auth_selectedType,omitempty" koanf:"auth_selectedType"`
 }
 
 type HarnessOverride struct {
-	Image            string            `json:"image,omitempty"`
-	User             string            `json:"user,omitempty"`
-	Env              map[string]string `json:"env,omitempty"`
-	Volumes          []api.VolumeMount `json:"volumes,omitempty"`
-	AuthSelectedType string            `json:"auth_selectedType,omitempty"`
+	Image            string            `json:"image,omitempty" yaml:"image,omitempty" koanf:"image"`
+	User             string            `json:"user,omitempty" yaml:"user,omitempty" koanf:"user"`
+	Env              map[string]string `json:"env,omitempty" yaml:"env,omitempty" koanf:"env"`
+	Volumes          []api.VolumeMount `json:"volumes,omitempty" yaml:"volumes,omitempty" koanf:"volumes"`
+	AuthSelectedType string            `json:"auth_selectedType,omitempty" yaml:"auth_selectedType,omitempty" koanf:"auth_selectedType"`
 }
 
 type ProfileConfig struct {
-	Runtime          string                     `json:"runtime"`
-	Tmux             *bool                      `json:"tmux,omitempty"`
-	Env              map[string]string          `json:"env,omitempty"`
-	Volumes          []api.VolumeMount          `json:"volumes,omitempty"`
-	HarnessOverrides map[string]HarnessOverride `json:"harness_overrides,omitempty"`
+	Runtime          string                     `json:"runtime" yaml:"runtime" koanf:"runtime"`
+	Tmux             *bool                      `json:"tmux,omitempty" yaml:"tmux,omitempty" koanf:"tmux"`
+	Env              map[string]string          `json:"env,omitempty" yaml:"env,omitempty" koanf:"env"`
+	Volumes          []api.VolumeMount          `json:"volumes,omitempty" yaml:"volumes,omitempty" koanf:"volumes"`
+	HarnessOverrides map[string]HarnessOverride `json:"harness_overrides,omitempty" yaml:"harness_overrides,omitempty" koanf:"harness_overrides"`
 }
 
 // BucketConfig defines settings for cloud storage bucket persistence.
@@ -52,18 +54,18 @@ type ProfileConfig struct {
 //   - SCION_BUCKET_NAME: The bucket name
 //   - SCION_BUCKET_PREFIX: The prefix/path within the bucket
 type BucketConfig struct {
-	Provider string `json:"provider,omitempty"` // Cloud provider: "GCS", etc.
-	Name     string `json:"name,omitempty"`     // Bucket name
-	Prefix   string `json:"prefix,omitempty"`   // Prefix/path within the bucket
+	Provider string `json:"provider,omitempty" yaml:"provider,omitempty" koanf:"provider"` // Cloud provider: "GCS", etc.
+	Name     string `json:"name,omitempty" yaml:"name,omitempty" koanf:"name"`             // Bucket name
+	Prefix   string `json:"prefix,omitempty" yaml:"prefix,omitempty" koanf:"prefix"`       // Prefix/path within the bucket
 }
 
 type Settings struct {
-	ActiveProfile   string                   `json:"active_profile"`
-	DefaultTemplate string                   `json:"default_template,omitempty"`
-	Bucket          *BucketConfig            `json:"bucket,omitempty"`
-	Runtimes        map[string]RuntimeConfig `json:"runtimes"`
-	Harnesses       map[string]HarnessConfig `json:"harnesses"`
-	Profiles        map[string]ProfileConfig `json:"profiles"`
+	ActiveProfile   string                   `json:"active_profile" yaml:"active_profile" koanf:"active_profile"`
+	DefaultTemplate string                   `json:"default_template,omitempty" yaml:"default_template,omitempty" koanf:"default_template"`
+	Bucket          *BucketConfig            `json:"bucket,omitempty" yaml:"bucket,omitempty" koanf:"bucket"`
+	Runtimes        map[string]RuntimeConfig `json:"runtimes" yaml:"runtimes" koanf:"runtimes"`
+	Harnesses       map[string]HarnessConfig `json:"harnesses" yaml:"harnesses" koanf:"harnesses"`
+	Profiles        map[string]ProfileConfig `json:"profiles" yaml:"profiles" koanf:"profiles"`
 }
 
 func (s *Settings) ResolveRuntime(profileName string) (RuntimeConfig, string, error) {
@@ -152,49 +154,11 @@ func mergeMaps(base, override map[string]string) map[string]string {
 	return result
 }
 
-// LoadSettings loads and merges settings from the hierarchy.
-// Priority: Grove > Global > Defaults
+// LoadSettings loads and merges settings from the hierarchy using Koanf.
+// Priority: Env vars > Grove > Global > Defaults
+// Supports both YAML (.yaml/.yml) and JSON (.json) files, preferring YAML.
 func LoadSettings(grovePath string) (*Settings, error) {
-	// 1. Start with App Defaults from embedded JSON
-	settings := &Settings{
-		Runtimes:  make(map[string]RuntimeConfig),
-		Harnesses: make(map[string]HarnessConfig),
-		Profiles:  make(map[string]ProfileConfig),
-	}
-
-	if defaultData, err := GetDefaultSettingsData(); err == nil {
-		if err := MergeSettings(settings, defaultData); err != nil {
-			// This should not happen with embedded defaults
-		}
-	} else {
-		// Fallback to minimal hardcoded defaults if embed fails
-		settings.ActiveProfile = "local"
-		settings.DefaultTemplate = "gemini"
-	}
-
-	// 2. Merge Global (~/.scion/settings.json)
-	globalDir, err := GetGlobalDir()
-	if err == nil {
-		globalSettingsPath := filepath.Join(globalDir, "settings.json")
-		if err := mergeSettingsFromFile(settings, globalSettingsPath); err != nil {
-			if !os.IsNotExist(err) {
-				// We still return settings but maybe we should log this
-			}
-		}
-	}
-
-	// 3. Merge Grove settings
-	if grovePath != "" {
-		groveSettingsPath := filepath.Join(grovePath, "settings.json")
-
-		if err := mergeSettingsFromFile(settings, groveSettingsPath); err != nil {
-			if !os.IsNotExist(err) {
-				// We still return settings
-			}
-		}
-	}
-
-	return settings, nil
+	return LoadSettingsKoanf(grovePath)
 }
 
 func mergeSettingsFromFile(base *Settings, path string) error {
@@ -371,8 +335,38 @@ func MergeSettings(base *Settings, data []byte) error {
 	return nil
 }
 
-// SaveSettings saves the settings to the specified location.
+// SaveSettings saves the settings to the specified location in YAML format.
 func SaveSettings(grovePath string, settings *Settings, global bool) error {
+	var targetPath string
+	if global {
+		globalDir, err := GetGlobalDir()
+		if err != nil {
+			return err
+		}
+		targetPath = filepath.Join(globalDir, "settings.yaml")
+	} else {
+		if grovePath == "" {
+			return fmt.Errorf("grove path required for local settings")
+		}
+		targetPath = filepath.Join(grovePath, "settings.yaml")
+	}
+
+	dir := filepath.Dir(targetPath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+
+	data, err := yaml.Marshal(settings)
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(targetPath, data, 0644)
+}
+
+// SaveSettingsJSON saves the settings to the specified location in JSON format.
+// This is provided for backward compatibility.
+func SaveSettingsJSON(grovePath string, settings *Settings, global bool) error {
 	var targetPath string
 	if global {
 		globalDir, err := GetGlobalDir()
@@ -401,34 +395,48 @@ func SaveSettings(grovePath string, settings *Settings, global bool) error {
 }
 
 // UpdateSetting updates a specific setting key in the specified scope (global or local).
+// It reads from existing settings file (YAML or JSON) and writes to YAML format.
 func UpdateSetting(grovePath string, key string, value string, global bool) error {
-	var targetPath string
+	var dir string
 	if global {
 		globalDir, err := GetGlobalDir()
 		if err != nil {
 			return err
 		}
-		targetPath = filepath.Join(globalDir, "settings.json")
+		dir = globalDir
 	} else {
 		if grovePath == "" {
 			return fmt.Errorf("grove path required for local settings")
 		}
-		targetPath = filepath.Join(grovePath, "settings.json")
+		dir = grovePath
 	}
+
+	// Find existing settings file (YAML or JSON)
+	existingPath := GetSettingsPath(dir)
+	targetPath := filepath.Join(dir, "settings.yaml")
 
 	// Load existing file specifically (not merged)
 	var current Settings
-	data, err := os.ReadFile(targetPath)
-	if err == nil {
-		if err := util.UnmarshalJSONC(data, &current); err != nil {
-			return fmt.Errorf("failed to parse existing settings at %s: %w", targetPath, err)
+	if existingPath != "" {
+		data, err := os.ReadFile(existingPath)
+		if err != nil && !os.IsNotExist(err) {
+			return err
 		}
-	} else if !os.IsNotExist(err) {
-		return err
+		if err == nil {
+			// Parse based on file extension
+			if filepath.Ext(existingPath) == ".json" {
+				if err := util.UnmarshalJSONC(data, &current); err != nil {
+					return fmt.Errorf("failed to parse existing settings at %s: %w", existingPath, err)
+				}
+			} else {
+				if err := yaml.Unmarshal(data, &current); err != nil {
+					return fmt.Errorf("failed to parse existing settings at %s: %w", existingPath, err)
+				}
+			}
+		}
 	}
 
-	// Update the field - this logic needs to be more flexible for the new structure
-	// For now, support some basic ones
+	// Update the field
 	switch key {
 	case "active_profile":
 		current.ActiveProfile = value
@@ -453,15 +461,24 @@ func UpdateSetting(grovePath string, key string, value string, global bool) erro
 		return fmt.Errorf("unknown or complex setting key: %s (manual edit recommended for registries)", key)
 	}
 
-	// Save
+	// Save as YAML
 	if err := os.MkdirAll(filepath.Dir(targetPath), 0755); err != nil {
 		return err
 	}
-	newData, err := json.MarshalIndent(current, "", "  ")
+	newData, err := yaml.Marshal(current)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(targetPath, newData, 0644)
+	if err := os.WriteFile(targetPath, newData, 0644); err != nil {
+		return err
+	}
+
+	// If we migrated from JSON, remove the old JSON file
+	if existingPath != "" && existingPath != targetPath && filepath.Ext(existingPath) == ".json" {
+		_ = os.Remove(existingPath)
+	}
+
+	return nil
 }
 
 func GetSettingValue(s *Settings, key string) (string, error) {

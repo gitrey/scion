@@ -1,0 +1,142 @@
+package config
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/knadh/koanf/parsers/json"
+	"github.com/knadh/koanf/parsers/yaml"
+	"github.com/knadh/koanf/providers/env"
+	"github.com/knadh/koanf/providers/file"
+	"github.com/knadh/koanf/providers/rawbytes"
+	"github.com/knadh/koanf/v2"
+)
+
+// LoadSettingsKoanf loads settings using Koanf with provider priority:
+// 1. Embedded defaults (YAML) with OS-specific runtime adjustment
+// 2. Global settings file (~/.scion/settings.yaml or .json)
+// 3. Grove settings file (.scion/settings.yaml or .json)
+// 4. Environment variables (SCION_ prefix, top-level only)
+func LoadSettingsKoanf(grovePath string) (*Settings, error) {
+	k := koanf.New(".")
+
+	// 1. Load embedded defaults (YAML with fallback to JSON)
+	// GetDefaultSettingsData applies OS-specific runtime adjustments
+	if defaultData, err := GetDefaultSettingsData(); err == nil {
+		_ = k.Load(rawbytes.Provider(defaultData), json.Parser())
+	}
+
+	// 2. Load global settings (~/.scion/settings.yaml or .json)
+	if globalDir, err := GetGlobalDir(); err == nil {
+		loadSettingsFile(k, globalDir)
+	}
+
+	// 3. Load grove settings
+	if grovePath != "" {
+		loadSettingsFile(k, grovePath)
+	}
+
+	// 4. Load environment variables (SCION_ prefix, top-level only)
+	// Maps: SCION_ACTIVE_PROFILE -> active_profile
+	//       SCION_DEFAULT_TEMPLATE -> default_template
+	//       SCION_BUCKET_PROVIDER -> bucket.provider
+	//       SCION_BUCKET_NAME -> bucket.name
+	//       SCION_BUCKET_PREFIX -> bucket.prefix
+	_ = k.Load(env.Provider("SCION_", ".", func(s string) string {
+		key := strings.ToLower(strings.TrimPrefix(s, "SCION_"))
+		// Handle nested bucket keys
+		if strings.HasPrefix(key, "bucket_") {
+			return "bucket." + strings.TrimPrefix(key, "bucket_")
+		}
+		return key
+	}), nil)
+
+	// Unmarshal into Settings struct
+	settings := &Settings{
+		Runtimes:  make(map[string]RuntimeConfig),
+		Harnesses: make(map[string]HarnessConfig),
+		Profiles:  make(map[string]ProfileConfig),
+	}
+
+	if err := k.Unmarshal("", settings); err != nil {
+		return nil, err
+	}
+
+	return settings, nil
+}
+
+// loadSettingsFile loads settings from a directory, preferring YAML over JSON
+func loadSettingsFile(k *koanf.Koanf, dir string) {
+	yamlPath := filepath.Join(dir, "settings.yaml")
+	ymlPath := filepath.Join(dir, "settings.yml")
+	jsonPath := filepath.Join(dir, "settings.json")
+
+	// Try YAML first (.yaml then .yml)
+	if _, err := os.Stat(yamlPath); err == nil {
+		_ = k.Load(file.Provider(yamlPath), yaml.Parser())
+		return
+	}
+	if _, err := os.Stat(ymlPath); err == nil {
+		_ = k.Load(file.Provider(ymlPath), yaml.Parser())
+		return
+	}
+	// Fall back to JSON
+	if _, err := os.Stat(jsonPath); err == nil {
+		_ = k.Load(file.Provider(jsonPath), json.Parser())
+	}
+}
+
+// GetDefaultSettingsDataYAML returns the embedded default settings in YAML format.
+// This function adjusts the local profile runtime based on the OS.
+func GetDefaultSettingsDataYAML() ([]byte, error) {
+	return EmbedsFS.ReadFile("embeds/default_settings.yaml")
+}
+
+// GetSettingsPath returns the path to the settings file in a directory,
+// preferring YAML over JSON. Returns empty string if no settings file exists.
+func GetSettingsPath(dir string) string {
+	yamlPath := filepath.Join(dir, "settings.yaml")
+	ymlPath := filepath.Join(dir, "settings.yml")
+	jsonPath := filepath.Join(dir, "settings.json")
+
+	if _, err := os.Stat(yamlPath); err == nil {
+		return yamlPath
+	}
+	if _, err := os.Stat(ymlPath); err == nil {
+		return ymlPath
+	}
+	if _, err := os.Stat(jsonPath); err == nil {
+		return jsonPath
+	}
+	return ""
+}
+
+// GetScionAgentConfigPath returns the path to the scion-agent config file,
+// preferring YAML over JSON. Returns empty string if no config file exists.
+func GetScionAgentConfigPath(dir string) string {
+	yamlPath := filepath.Join(dir, "scion-agent.yaml")
+	ymlPath := filepath.Join(dir, "scion-agent.yml")
+	jsonPath := filepath.Join(dir, "scion-agent.json")
+
+	if _, err := os.Stat(yamlPath); err == nil {
+		return yamlPath
+	}
+	if _, err := os.Stat(ymlPath); err == nil {
+		return ymlPath
+	}
+	if _, err := os.Stat(jsonPath); err == nil {
+		return jsonPath
+	}
+	return ""
+}
+
+// SettingsFileExists checks if a settings file exists in a directory (YAML or JSON)
+func SettingsFileExists(dir string) bool {
+	return GetSettingsPath(dir) != ""
+}
+
+// ScionAgentConfigExists checks if a scion-agent config file exists (YAML or JSON)
+func ScionAgentConfigExists(dir string) bool {
+	return GetScionAgentConfigPath(dir) != ""
+}

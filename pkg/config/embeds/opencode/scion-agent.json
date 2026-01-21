@@ -1,7 +1,0 @@
-{
-  "image": "us-central1-docker.pkg.dev/user-content-search/public-docker/scion-opencode:latest",
-  "harness": "opencode",
-  "info": {
-    "template": "opencode"
-  }
-}

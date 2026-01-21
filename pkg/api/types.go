@@ -12,46 +12,46 @@ type AgentK8sMetadata struct {
 }
 
 type VolumeMount struct {
-	Source   string `json:"source"`
-	Target   string `json:"target"`
-	ReadOnly bool   `json:"read_only,omitempty"`
-	Type     string `json:"type,omitempty"`   // "local" (default) or "gcs"
-	Bucket   string `json:"bucket,omitempty"` // For GCS
-	Prefix   string `json:"prefix,omitempty"` // For GCS
-	Mode     string `json:"mode,omitempty"`   // Mount options
+	Source   string `json:"source" yaml:"source"`
+	Target   string `json:"target" yaml:"target"`
+	ReadOnly bool   `json:"read_only,omitempty" yaml:"read_only,omitempty"`
+	Type     string `json:"type,omitempty" yaml:"type,omitempty"`     // "local" (default) or "gcs"
+	Bucket   string `json:"bucket,omitempty" yaml:"bucket,omitempty"` // For GCS
+	Prefix   string `json:"prefix,omitempty" yaml:"prefix,omitempty"` // For GCS
+	Mode     string `json:"mode,omitempty" yaml:"mode,omitempty"`     // Mount options
 }
 
 type KubernetesConfig struct {
-	Context            string        `json:"context,omitempty"`
-	Namespace          string        `json:"namespace,omitempty"`
-	RuntimeClassName   string        `json:"runtimeClassName,omitempty"`
-	ServiceAccountName string        `json:"serviceAccountName,omitempty"` // For Workload Identity
-	Resources          *K8sResources `json:"resources,omitempty"`
+	Context            string        `json:"context,omitempty" yaml:"context,omitempty"`
+	Namespace          string        `json:"namespace,omitempty" yaml:"namespace,omitempty"`
+	RuntimeClassName   string        `json:"runtimeClassName,omitempty" yaml:"runtimeClassName,omitempty"`
+	ServiceAccountName string        `json:"serviceAccountName,omitempty" yaml:"serviceAccountName,omitempty"` // For Workload Identity
+	Resources          *K8sResources `json:"resources,omitempty" yaml:"resources,omitempty"`
 }
 
 type K8sResources struct {
-	Requests map[string]string `json:"requests,omitempty"`
-	Limits   map[string]string `json:"limits,omitempty"`
+	Requests map[string]string `json:"requests,omitempty" yaml:"requests,omitempty"`
+	Limits   map[string]string `json:"limits,omitempty" yaml:"limits,omitempty"`
 }
 
 type GeminiConfig struct {
-	AuthSelectedType string `json:"auth_selectedType,omitempty"`
+	AuthSelectedType string `json:"auth_selectedType,omitempty" yaml:"auth_selectedType,omitempty"`
 }
 
 type ScionConfig struct {
-	Harness     string            `json:"harness,omitempty"`
-	ConfigDir   string            `json:"config_dir,omitempty"`
-	Env         map[string]string `json:"env,omitempty"`
-	Volumes     []VolumeMount     `json:"volumes,omitempty"`
-	Detached    *bool             `json:"detached"`
-	CommandArgs []string          `json:"command_args,omitempty"`
-	Model       string            `json:"model,omitempty"`
-	Kubernetes  *KubernetesConfig `json:"kubernetes,omitempty"`
-	Gemini      *GeminiConfig     `json:"gemini,omitempty"`
-	Image       string            `json:"image,omitempty"`
+	Harness     string            `json:"harness,omitempty" yaml:"harness,omitempty"`
+	ConfigDir   string            `json:"config_dir,omitempty" yaml:"config_dir,omitempty"`
+	Env         map[string]string `json:"env,omitempty" yaml:"env,omitempty"`
+	Volumes     []VolumeMount     `json:"volumes,omitempty" yaml:"volumes,omitempty"`
+	Detached    *bool             `json:"detached" yaml:"detached"`
+	CommandArgs []string          `json:"command_args,omitempty" yaml:"command_args,omitempty"`
+	Model       string            `json:"model,omitempty" yaml:"model,omitempty"`
+	Kubernetes  *KubernetesConfig `json:"kubernetes,omitempty" yaml:"kubernetes,omitempty"`
+	Gemini      *GeminiConfig     `json:"gemini,omitempty" yaml:"gemini,omitempty"`
+	Image       string            `json:"image,omitempty" yaml:"image,omitempty"`
 
 	// Info contains persisted metadata about the agent
-	Info *AgentInfo `json:"-"`
+	Info *AgentInfo `json:"-" yaml:"-"`
 }
 
 func (c *ScionConfig) IsDetached() bool {

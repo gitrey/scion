@@ -1,0 +1,5 @@
+# Gemini harness configuration
+harness: gemini
+
+gemini:
+  auth_selectedType: gemini-api-key
