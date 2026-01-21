@@ -1,6 +1,16 @@
 {
   "active_profile": "local",
   "default_template": "gemini",
+
+  // Bucket configuration for cloud storage persistence.
+  // Uncomment and configure to enable bucket-based storage.
+  // Values can reference environment variables using ${VAR} syntax.
+  // "bucket": {
+  //   "provider": "${SCION_BUCKET_PROVIDER}",  // Cloud provider: "GCS"
+  //   "name": "${SCION_BUCKET_NAME}",          // Bucket name, e.g., "scion-abc12"
+  //   "prefix": "${SCION_BUCKET_PREFIX}"       // Prefix within bucket, e.g., "scion"
+  // },
+
   "runtimes": {
     "docker": {
       "host": ""

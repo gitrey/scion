@@ -46,9 +46,21 @@ type ProfileConfig struct {
 	HarnessOverrides map[string]HarnessOverride `json:"harness_overrides,omitempty"`
 }
 
+// BucketConfig defines settings for cloud storage bucket persistence.
+// These settings can be set via environment variables:
+//   - SCION_BUCKET_PROVIDER: The cloud provider (e.g., "GCS")
+//   - SCION_BUCKET_NAME: The bucket name
+//   - SCION_BUCKET_PREFIX: The prefix/path within the bucket
+type BucketConfig struct {
+	Provider string `json:"provider,omitempty"` // Cloud provider: "GCS", etc.
+	Name     string `json:"name,omitempty"`     // Bucket name
+	Prefix   string `json:"prefix,omitempty"`   // Prefix/path within the bucket
+}
+
 type Settings struct {
 	ActiveProfile   string                   `json:"active_profile"`
 	DefaultTemplate string                   `json:"default_template,omitempty"`
+	Bucket          *BucketConfig            `json:"bucket,omitempty"`
 	Runtimes        map[string]RuntimeConfig `json:"runtimes"`
 	Harnesses       map[string]HarnessConfig `json:"harnesses"`
 	Profiles        map[string]ProfileConfig `json:"profiles"`
@@ -240,6 +252,25 @@ func MergeSettings(base *Settings, data []byte) error {
 		base.DefaultTemplate = override.DefaultTemplate
 	}
 
+	// Merge bucket config with env var expansion
+	if override.Bucket != nil {
+		if base.Bucket == nil {
+			base.Bucket = &BucketConfig{}
+		}
+		if override.Bucket.Provider != "" {
+			p, _ := util.ExpandEnv(override.Bucket.Provider)
+			base.Bucket.Provider = p
+		}
+		if override.Bucket.Name != "" {
+			n, _ := util.ExpandEnv(override.Bucket.Name)
+			base.Bucket.Name = n
+		}
+		if override.Bucket.Prefix != "" {
+			pf, _ := util.ExpandEnv(override.Bucket.Prefix)
+			base.Bucket.Prefix = pf
+		}
+	}
+
 	if override.Runtimes != nil {
 		if base.Runtimes == nil {
 			base.Runtimes = make(map[string]RuntimeConfig)
@@ -403,6 +434,21 @@ func UpdateSetting(grovePath string, key string, value string, global bool) erro
 		current.ActiveProfile = value
 	case "default_template":
 		current.DefaultTemplate = value
+	case "bucket.provider":
+		if current.Bucket == nil {
+			current.Bucket = &BucketConfig{}
+		}
+		current.Bucket.Provider = value
+	case "bucket.name":
+		if current.Bucket == nil {
+			current.Bucket = &BucketConfig{}
+		}
+		current.Bucket.Name = value
+	case "bucket.prefix":
+		if current.Bucket == nil {
+			current.Bucket = &BucketConfig{}
+		}
+		current.Bucket.Prefix = value
 	default:
 		return fmt.Errorf("unknown or complex setting key: %s (manual edit recommended for registries)", key)
 	}
@@ -424,6 +470,21 @@ func GetSettingValue(s *Settings, key string) (string, error) {
 		return s.ActiveProfile, nil
 	case "default_template":
 		return s.DefaultTemplate, nil
+	case "bucket.provider":
+		if s.Bucket != nil {
+			return s.Bucket.Provider, nil
+		}
+		return "", nil
+	case "bucket.name":
+		if s.Bucket != nil {
+			return s.Bucket.Name, nil
+		}
+		return "", nil
+	case "bucket.prefix":
+		if s.Bucket != nil {
+			return s.Bucket.Prefix, nil
+		}
+		return "", nil
 	}
 	return "", fmt.Errorf("unknown or complex setting key: %s", key)
 }
@@ -432,5 +493,10 @@ func GetSettingsMap(s *Settings) map[string]string {
 	m := make(map[string]string)
 	m["active_profile"] = s.ActiveProfile
 	m["default_template"] = s.DefaultTemplate
+	if s.Bucket != nil {
+		m["bucket.provider"] = s.Bucket.Provider
+		m["bucket.name"] = s.Bucket.Name
+		m["bucket.prefix"] = s.Bucket.Prefix
+	}
 	return m
 }

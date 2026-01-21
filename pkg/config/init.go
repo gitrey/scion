@@ -9,6 +9,7 @@ import (
 	"runtime"
 
 	"github.com/ptone/scion-agent/pkg/api"
+	"github.com/ptone/scion-agent/pkg/util"
 )
 
 //go:embed all:embeds/*
@@ -21,7 +22,8 @@ func GetDefaultSettingsData() ([]byte, error) {
 	}
 
 	var settings Settings
-	if err := json.Unmarshal(data, &settings); err == nil {
+	// Use JSONC parser to support comments in the default settings file
+	if err := util.UnmarshalJSONC(data, &settings); err == nil {
 		if local, ok := settings.Profiles["local"]; ok {
 			if runtime.GOOS == "darwin" {
 				local.Runtime = "container"
