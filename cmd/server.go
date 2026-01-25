@@ -288,10 +288,11 @@ func registerGlobalGroveAndHost(ctx context.Context, s store.Store, hostID, host
 	// Create global grove if it doesn't exist
 	if globalGrove == nil {
 		globalGrove = &store.Grove{
-			ID:         api.NewUUID(),
-			Name:       "Global",
-			Slug:       GlobalGroveName,
-			Visibility: store.VisibilityPrivate,
+			ID:                   api.NewUUID(),
+			Name:                 "Global",
+			Slug:                 GlobalGroveName,
+			Visibility:           store.VisibilityPrivate,
+			DefaultRuntimeHostID: hostID, // Set this host as the default
 			Labels: map[string]string{
 				"scion.io/system": "true",
 				"scion.io/global": "true",
@@ -300,6 +301,12 @@ func registerGlobalGroveAndHost(ctx context.Context, s store.Store, hostID, host
 
 		if err := s.CreateGrove(ctx, globalGrove); err != nil {
 			return fmt.Errorf("failed to create global grove: %w", err)
+		}
+	} else if globalGrove.DefaultRuntimeHostID == "" {
+		// Update existing grove to set default runtime host if not already set
+		globalGrove.DefaultRuntimeHostID = hostID
+		if err := s.UpdateGrove(ctx, globalGrove); err != nil {
+			log.Printf("Warning: failed to set default runtime host for global grove: %v", err)
 		}
 	}
 
@@ -413,6 +420,10 @@ func (d *agentDispatcherAdapter) DispatchAgentCreate(ctx context.Context, hubAge
 
 	if hubAgent.AppliedConfig != nil {
 		opts.Template = hubAgent.AppliedConfig.Harness
+		// Pass the task through to the runtime host
+		if hubAgent.AppliedConfig.Task != "" {
+			opts.Task = hubAgent.AppliedConfig.Task
+		}
 	}
 
 	// Start the agent on the runtime host

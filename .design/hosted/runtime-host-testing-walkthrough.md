@@ -159,9 +159,26 @@ curl -s -X POST http://localhost:9800/api/v1/agents \
 
 **Via Hub API (requires grove and runtime host):**
 
+When both Hub and Runtime Host servers are co-located, agents can be created via the Hub API and will automatically be dispatched to the runtime host.
+
+```bash
+# Get the global grove ID
+GROVE_ID=$(curl -s http://localhost:9810/api/v1/groves | jq -r '.groves[] | select(.slug == "global") | .id')
+
+# Create an agent via Hub API (uses global grove's default runtime host)
+curl -s -X POST http://localhost:9810/api/v1/agents \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"name\": \"test-agent\",
+    \"groveId\": \"$GROVE_ID\",
+    \"template\": \"claude\",
+    \"task\": \"Hello, this is a test agent\"
+  }" | jq
+```
+
 When creating agents via the Hub API, you must either:
 1. Specify a `runtimeHostId` explicitly, OR
-2. Use a grove that has a default runtime host configured (set when the first host registers)
+2. Use a grove that has a default runtime host configured (set automatically when co-located servers start)
 
 If neither is available, you'll receive a `no_runtime_host` error with a list of available alternatives.
 
@@ -291,6 +308,7 @@ Agents created via the Hub API require a runtime host. The Hub resolves the runt
 2. Fall back to the grove's `defaultRuntimeHostId` (set when the first host registers)
 3. Return an error with available alternatives if neither is available
 
+
 ```bash
 # Get the global grove ID
 GROVE_ID=$(curl -s http://localhost:9810/api/v1/groves | jq -r '.groves[] | select(.slug == "global") | .id')
@@ -299,9 +317,10 @@ GROVE_ID=$(curl -s http://localhost:9810/api/v1/groves | jq -r '.groves[] | sele
 curl -s -X POST http://localhost:9810/api/v1/agents \
   -H "Content-Type: application/json" \
   -d "{
-    \"name\": \"Feature Agent\",
+    \"name\": \"feature-agent\",
     \"groveId\": \"$GROVE_ID\",
-    \"template\": \"claude\"
+    \"template\": \"claude\",
+    \"task\": \"Hello, please list the files in the current directory\"
   }" | jq
 ```
 
@@ -315,10 +334,11 @@ HOST_ID=$(curl -s "http://localhost:9810/api/v1/runtime-hosts?groveId=$GROVE_ID"
 curl -s -X POST http://localhost:9810/api/v1/agents \
   -H "Content-Type: application/json" \
   -d "{
-    \"name\": \"Feature Agent\",
+    \"name\": \"feature-agent-2\",
     \"groveId\": \"$GROVE_ID\",
     \"runtimeHostId\": \"$HOST_ID\",
-    \"template\": \"claude\"
+    \"template\": \"claude\",
+    \"task\": \"Hello, please describe the project structure\"
   }" | jq
 ```
 
@@ -333,8 +353,9 @@ You can also use the RESTful grove-scoped endpoint. This supports both UUID and 
 curl -s -X POST "http://localhost:9810/api/v1/groves/${GROVE_ID}__global/agents" \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "Another Agent",
-    "template": "claude"
+    "name": "another-agent",
+    "template": "claude",
+    "task": "Hello, please analyze the codebase"
   }' | jq
 ```
 
@@ -352,7 +373,7 @@ Expected output shows the agent is running:
   "agents": [
     {
       "agentId": "feature-agent",
-      "name": "Feature Agent",
+      "name": "feature-agent",
       "status": "running",
       ...
     }
@@ -591,9 +612,10 @@ echo -e "\n=== 5. Create Agent via Hub ==="
 AGENT_RESPONSE=$(curl -s -X POST $HUB_URL/api/v1/agents \
   -H "Content-Type: application/json" \
   -d "{
-    \"name\": \"Demo Agent\",
+    \"name\": \"demo-agent\",
     \"groveId\": \"$GROVE_ID\",
-    \"template\": \"claude\"
+    \"template\": \"claude\",
+    \"task\": \"Hello, please describe the current environment\"
   }")
 echo $AGENT_RESPONSE | jq
 AGENT_ID=$(echo $AGENT_RESPONSE | jq -r '.agent.id')

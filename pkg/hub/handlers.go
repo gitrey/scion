@@ -235,9 +235,17 @@ func (s *Server) createAgent(w http.ResponseWriter, r *http.Request) {
 			Env:     req.Config.Env,
 			Model:   req.Config.Model,
 			Harness: req.Template,
+			Task:    req.Task,
 		}
 	} else {
 		agent.Detached = true
+		// Store task even when no config override is provided
+		if req.Task != "" {
+			agent.AppliedConfig = &store.AgentAppliedConfig{
+				Harness: req.Template,
+				Task:    req.Task,
+			}
+		}
 	}
 
 	if err := s.store.CreateAgent(ctx, agent); err != nil {
@@ -901,9 +909,17 @@ func (s *Server) createGroveAgent(w http.ResponseWriter, r *http.Request, groveI
 			Env:     req.Config.Env,
 			Model:   req.Config.Model,
 			Harness: req.Template,
+			Task:    req.Task,
 		}
 	} else {
 		agent.Detached = true
+		// Store task even when no config override is provided
+		if req.Task != "" {
+			agent.AppliedConfig = &store.AgentAppliedConfig{
+				Harness: req.Template,
+				Task:    req.Task,
+			}
+		}
 	}
 
 	if err := s.store.CreateAgent(ctx, agent); err != nil {

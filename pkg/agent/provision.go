@@ -127,7 +127,8 @@ func ProvisionAgent(ctx context.Context, agentName string, templateName string, 
 		// Case 2: Git Repository (and no explicit workspace)
 		targetBranch := branch
 		if targetBranch == "" {
-			targetBranch = agentName
+			// Use slugified agent name for valid git branch names
+			targetBranch = api.Slugify(agentName)
 		}
 
 		// Check if we should use an existing worktree
@@ -166,7 +167,8 @@ func ProvisionAgent(ctx context.Context, agentName string, templateName string, 
 
 		worktreeBranch := branch
 		if worktreeBranch == "" {
-			worktreeBranch = agentName
+			// Use slugified agent name for valid git branch names
+			worktreeBranch = api.Slugify(agentName)
 		}
 
 		if err := util.CreateWorktree(agentWorkspace, worktreeBranch); err != nil {

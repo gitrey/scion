@@ -61,6 +61,7 @@ type AgentAppliedConfig struct {
 	Harness string            `json:"harness,omitempty"`
 	Env     map[string]string `json:"env,omitempty"`
 	Model   string            `json:"model,omitempty"`
+	Task    string            `json:"task,omitempty"` // Initial task/prompt for the agent
 }
 
 // AgentStatus constants
