@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ptone/scion-agent/pkg/config"
@@ -386,5 +387,132 @@ func TestProvisionAgentWorkspaceFlag(t *testing.T) {
 	}
 	if evalSource != evalCustomWorkspace {
 		t.Errorf("expected volume source %q, got %q", evalCustomWorkspace, evalSource)
+	}
+}
+
+func TestProvisionAgentYAMLTemplate(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Move to tmpDir to avoid being inside the project's git repo
+	oldWd, _ := os.Getwd()
+	os.Chdir(tmpDir)
+	defer os.Chdir(oldWd)
+
+	// Mock HOME for global settings and templates
+	originalHome := os.Getenv("HOME")
+	defer os.Setenv("HOME", originalHome)
+	os.Setenv("HOME", tmpDir)
+
+	globalScionDir := filepath.Join(tmpDir, ".scion")
+	globalTemplatesDir := filepath.Join(globalScionDir, "templates")
+	os.MkdirAll(globalTemplatesDir, 0755)
+
+	// Create a template with YAML config (the preferred format)
+	tplDir := filepath.Join(globalTemplatesDir, "yaml-test-tpl")
+	os.MkdirAll(tplDir, 0755)
+	tplConfigYAML := `harness: gemini
+env:
+  TPL_VAR: tpl-val
+  GOOGLE_CLOUD_PROJECT: my-project
+gemini:
+  auth_selectedType: vertex-ai
+`
+	os.WriteFile(filepath.Join(tplDir, "scion-agent.yaml"), []byte(tplConfigYAML), 0644)
+
+	// Project settings (minimal)
+	projectDir := filepath.Join(tmpDir, "project")
+	projectScionDir := filepath.Join(projectDir, ".scion")
+	os.MkdirAll(projectScionDir, 0755)
+	os.WriteFile(filepath.Join(projectDir, ".gitignore"), []byte("agents/"), 0644)
+
+	// Provision agent
+	agentName := "yaml-agent"
+	_, _, cfg, err := ProvisionAgent(context.Background(), agentName, "yaml-test-tpl", "", projectScionDir, "", "", "", "")
+	if err != nil {
+		t.Fatalf("ProvisionAgent failed: %v", err)
+	}
+
+	// Verify YAML config was loaded correctly
+	if cfg.Harness != "gemini" {
+		t.Errorf("expected harness 'gemini', got %q", cfg.Harness)
+	}
+	if cfg.Env["TPL_VAR"] != "tpl-val" {
+		t.Errorf("expected env[TPL_VAR] = 'tpl-val', got %q", cfg.Env["TPL_VAR"])
+	}
+	if cfg.Env["GOOGLE_CLOUD_PROJECT"] != "my-project" {
+		t.Errorf("expected env[GOOGLE_CLOUD_PROJECT] = 'my-project', got %q", cfg.Env["GOOGLE_CLOUD_PROJECT"])
+	}
+	if cfg.Gemini == nil || cfg.Gemini.AuthSelectedType != "vertex-ai" {
+		var got string
+		if cfg.Gemini != nil {
+			got = cfg.Gemini.AuthSelectedType
+		}
+		t.Errorf("expected gemini.auth_selectedType = 'vertex-ai', got %q", got)
+	}
+
+	// Verify it was persisted to scion-agent.json
+	agentScionJSON := filepath.Join(projectScionDir, "agents", agentName, "scion-agent.json")
+	data, err := os.ReadFile(agentScionJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var persistedCfg struct {
+		Harness string            `json:"harness"`
+		Env     map[string]string `json:"env"`
+	}
+	if err := json.Unmarshal(data, &persistedCfg); err != nil {
+		t.Fatal(err)
+	}
+	if persistedCfg.Harness != "gemini" {
+		t.Errorf("persisted: expected harness 'gemini', got %q", persistedCfg.Harness)
+	}
+	if persistedCfg.Env["TPL_VAR"] != "tpl-val" {
+		t.Errorf("persisted: expected env[TPL_VAR] = 'tpl-val', got %q", persistedCfg.Env["TPL_VAR"])
+	}
+}
+
+func TestProvisionAgentInvalidYAMLTemplate(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Move to tmpDir to avoid being inside the project's git repo
+	oldWd, _ := os.Getwd()
+	os.Chdir(tmpDir)
+	defer os.Chdir(oldWd)
+
+	// Mock HOME for global settings and templates
+	originalHome := os.Getenv("HOME")
+	defer os.Setenv("HOME", originalHome)
+	os.Setenv("HOME", tmpDir)
+
+	globalScionDir := filepath.Join(tmpDir, ".scion")
+	globalTemplatesDir := filepath.Join(globalScionDir, "templates")
+	os.MkdirAll(globalTemplatesDir, 0755)
+
+	// Create a template with invalid YAML config (commas in map entries)
+	tplDir := filepath.Join(globalTemplatesDir, "invalid-yaml-tpl")
+	os.MkdirAll(tplDir, 0755)
+	invalidYAML := `harness: gemini
+env:
+  "KEY1": "value1",
+  "KEY2": "value2"
+`
+	os.WriteFile(filepath.Join(tplDir, "scion-agent.yaml"), []byte(invalidYAML), 0644)
+
+	// Project settings
+	projectDir := filepath.Join(tmpDir, "project")
+	projectScionDir := filepath.Join(projectDir, ".scion")
+	os.MkdirAll(projectScionDir, 0755)
+	os.WriteFile(filepath.Join(projectDir, ".gitignore"), []byte("agents/"), 0644)
+
+	// Provision agent - should fail with an error
+	agentName := "invalid-yaml-agent"
+	_, _, _, err := ProvisionAgent(context.Background(), agentName, "invalid-yaml-tpl", "", projectScionDir, "", "", "", "")
+	if err == nil {
+		t.Fatal("expected error for invalid YAML template, got nil")
+	}
+
+	// Verify the error message contains useful information
+	if !strings.Contains(err.Error(), "failed to load config from template") {
+		t.Errorf("expected error to mention 'failed to load config from template', got: %v", err)
 	}
 }

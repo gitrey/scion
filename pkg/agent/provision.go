@@ -204,11 +204,12 @@ func ProvisionAgent(ctx context.Context, agentName string, templateName string, 
 			}
 		}
 
-		// Load scion-agent.json from this template and merge it
+		// Load scion-agent config from this template and merge it
 		tplCfg, err := tpl.LoadConfig()
-		if err == nil {
-			finalScionCfg = config.MergeScionConfig(finalScionCfg, tplCfg)
+		if err != nil {
+			return "", "", nil, fmt.Errorf("failed to load config from template %s: %w", tpl.Name, err)
 		}
+		finalScionCfg = config.MergeScionConfig(finalScionCfg, tplCfg)
 	}
 
 	// Merge settings env and auth if available
