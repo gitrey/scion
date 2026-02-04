@@ -647,7 +647,8 @@ type RegisterGroveResponse struct {
 	Grove     *store.Grove       `json:"grove"`
 	Host      *store.RuntimeHost `json:"host,omitempty"`
 	Created   bool               `json:"created"`
-	HostToken string             `json:"hostToken,omitempty"`
+	HostToken string             `json:"hostToken,omitempty"` // Deprecated: use SecretKey
+	SecretKey string             `json:"secretKey,omitempty"` // Base64-encoded HMAC secret
 }
 
 func (s *Server) handleGroves(w http.ResponseWriter, r *http.Request) {
@@ -915,8 +916,28 @@ func (s *Server) handleGroveRegister(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		// Generate a simple token (in production, use proper token generation)
-		hostToken = "host_" + api.NewShortID() + "_" + api.NewShortID()
+		// Generate HMAC credentials for the host if host auth service is available
+		if s.hostAuthService != nil {
+			secretKey, err := s.hostAuthService.GenerateAndStoreSecret(ctx, host.ID)
+			if err != nil {
+				// Log but don't fail - host is registered, can complete join later
+				util.Debugf("Warning: failed to generate host secret: %v", err)
+				// Fall back to simple token for backward compatibility
+				hostToken = "host_" + api.NewShortID() + "_" + api.NewShortID()
+			} else {
+				// Return the secret key (base64-encoded)
+				writeJSON(w, http.StatusOK, RegisterGroveResponse{
+					Grove:     grove,
+					Host:      host,
+					Created:   created,
+					SecretKey: secretKey,
+				})
+				return
+			}
+		} else {
+			// No host auth service - use simple token
+			hostToken = "host_" + api.NewShortID() + "_" + api.NewShortID()
+		}
 	}
 
 	writeJSON(w, http.StatusOK, RegisterGroveResponse{

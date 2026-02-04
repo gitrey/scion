@@ -96,8 +96,9 @@ type HostInfo struct {
 type RegisterGroveResponse struct {
 	Grove     *Grove       `json:"grove"`
 	Host      *RuntimeHost `json:"host"`
-	Created   bool         `json:"created"` // True if grove was newly created
-	HostToken string       `json:"hostToken"`
+	Created   bool         `json:"created"`   // True if grove was newly created
+	HostToken string       `json:"hostToken"` // Deprecated: use SecretKey
+	SecretKey string       `json:"secretKey"` // Base64-encoded HMAC secret
 }
 
 // CreateGroveRequest is the request for creating a grove without a host.

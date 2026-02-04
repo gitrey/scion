@@ -546,3 +546,162 @@ func TestSlugify(t *testing.T) {
 		})
 	}
 }
+
+// TestGenerateAndStoreSecret tests the simplified secret generation for grove registration.
+func TestGenerateAndStoreSecret(t *testing.T) {
+	svc, s := setupTestHostAuthService(t)
+	ctx := context.Background()
+
+	// Create a host first (GenerateAndStoreSecret requires an existing host)
+	hostID := uuid.New().String()
+	host := &store.RuntimeHost{
+		ID:      hostID,
+		Name:    "test-host",
+		Slug:    "test-host",
+		Mode:    store.HostModeConnected,
+		Status:  store.HostStatusOnline,
+		Created: time.Now(),
+		Updated: time.Now(),
+	}
+	if err := s.CreateRuntimeHost(ctx, host); err != nil {
+		t.Fatalf("failed to create runtime host: %v", err)
+	}
+
+	// Generate secret
+	secretKey, err := svc.GenerateAndStoreSecret(ctx, hostID)
+	if err != nil {
+		t.Fatalf("GenerateAndStoreSecret failed: %v", err)
+	}
+
+	// Verify secret is valid base64
+	secretBytes, err := base64.StdEncoding.DecodeString(secretKey)
+	if err != nil {
+		t.Fatalf("SecretKey should be valid base64: %v", err)
+	}
+	if len(secretBytes) != 32 {
+		t.Errorf("SecretKey should be 32 bytes, got %d", len(secretBytes))
+	}
+
+	// Verify secret was stored
+	storedSecret, err := s.GetHostSecret(ctx, hostID)
+	if err != nil {
+		t.Fatalf("failed to get stored secret: %v", err)
+	}
+	if storedSecret == nil {
+		t.Fatal("expected secret to be stored")
+	}
+	if !bytes.Equal(storedSecret.SecretKey, secretBytes) {
+		t.Error("stored secret doesn't match returned secret")
+	}
+}
+
+// TestGenerateAndStoreSecret_ReturnsExistingSecret tests that calling GenerateAndStoreSecret
+// multiple times for the same host returns the existing secret.
+func TestGenerateAndStoreSecret_ReturnsExistingSecret(t *testing.T) {
+	svc, s := setupTestHostAuthService(t)
+	ctx := context.Background()
+
+	// Create a host
+	hostID := uuid.New().String()
+	host := &store.RuntimeHost{
+		ID:      hostID,
+		Name:    "test-host",
+		Slug:    "test-host",
+		Mode:    store.HostModeConnected,
+		Status:  store.HostStatusOnline,
+		Created: time.Now(),
+		Updated: time.Now(),
+	}
+	if err := s.CreateRuntimeHost(ctx, host); err != nil {
+		t.Fatalf("failed to create runtime host: %v", err)
+	}
+
+	// Generate secret first time
+	secretKey1, err := svc.GenerateAndStoreSecret(ctx, hostID)
+	if err != nil {
+		t.Fatalf("First GenerateAndStoreSecret failed: %v", err)
+	}
+
+	// Generate secret second time - should return same secret
+	secretKey2, err := svc.GenerateAndStoreSecret(ctx, hostID)
+	if err != nil {
+		t.Fatalf("Second GenerateAndStoreSecret failed: %v", err)
+	}
+
+	if secretKey1 != secretKey2 {
+		t.Errorf("Expected same secret on re-registration, got different:\n  first:  %s\n  second: %s", secretKey1, secretKey2)
+	}
+}
+
+// TestGenerateAndStoreSecret_RequiresHostID tests that empty hostID is rejected.
+func TestGenerateAndStoreSecret_RequiresHostID(t *testing.T) {
+	svc, _ := setupTestHostAuthService(t)
+	ctx := context.Background()
+
+	_, err := svc.GenerateAndStoreSecret(ctx, "")
+	if err == nil {
+		t.Error("Expected error for empty hostID")
+	}
+	if !strings.Contains(err.Error(), "hostId is required") {
+		t.Errorf("Expected 'hostId is required' error, got: %v", err)
+	}
+}
+
+// TestGenerateAndStoreSecret_CanBeUsedForHMACAuth tests the full flow:
+// generate secret, then use it to authenticate a request.
+func TestGenerateAndStoreSecret_CanBeUsedForHMACAuth(t *testing.T) {
+	svc, s := setupTestHostAuthService(t)
+	ctx := context.Background()
+
+	// Create a host
+	hostID := uuid.New().String()
+	host := &store.RuntimeHost{
+		ID:      hostID,
+		Name:    "auth-test-host",
+		Slug:    "auth-test-host",
+		Mode:    store.HostModeConnected,
+		Status:  store.HostStatusOnline,
+		Created: time.Now(),
+		Updated: time.Now(),
+	}
+	if err := s.CreateRuntimeHost(ctx, host); err != nil {
+		t.Fatalf("failed to create runtime host: %v", err)
+	}
+
+	// Generate secret
+	secretKeyB64, err := svc.GenerateAndStoreSecret(ctx, hostID)
+	if err != nil {
+		t.Fatalf("GenerateAndStoreSecret failed: %v", err)
+	}
+
+	secretKey, err := base64.StdEncoding.DecodeString(secretKeyB64)
+	if err != nil {
+		t.Fatalf("failed to decode secret: %v", err)
+	}
+
+	// Create a signed request using the secret
+	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
+	nonce := "test-nonce-abc"
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/test", nil)
+	req.Header.Set(HeaderHostID, hostID)
+	req.Header.Set(HeaderTimestamp, timestamp)
+	req.Header.Set(HeaderNonce, nonce)
+
+	// Build canonical string and compute signature
+	canonicalString := svc.buildCanonicalString(req, timestamp, nonce)
+	h := hmac.New(sha256.New, secretKey)
+	h.Write(canonicalString)
+	signature := base64.StdEncoding.EncodeToString(h.Sum(nil))
+	req.Header.Set(HeaderSignature, signature)
+
+	// Validate the signature
+	identity, err := svc.ValidateHostSignature(ctx, req)
+	if err != nil {
+		t.Fatalf("ValidateHostSignature failed: %v", err)
+	}
+
+	if identity.HostID() != hostID {
+		t.Errorf("HostID mismatch: got %s, want %s", identity.HostID(), hostID)
+	}
+}

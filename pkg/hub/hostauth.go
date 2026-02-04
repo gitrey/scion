@@ -293,6 +293,43 @@ func (s *HostAuthService) CompleteHostJoin(ctx context.Context, req HostJoinRequ
 	}, nil
 }
 
+// GenerateAndStoreSecret generates a new HMAC secret for an existing host.
+// This is used for simplified registration flows where a join token is not required.
+// Returns the base64-encoded secret key.
+func (s *HostAuthService) GenerateAndStoreSecret(ctx context.Context, hostID string) (string, error) {
+	if hostID == "" {
+		return "", errors.New("hostId is required")
+	}
+
+	// Check if host already has a secret
+	existingSecret, err := s.store.GetHostSecret(ctx, hostID)
+	if err == nil && existingSecret != nil {
+		// Host already has a secret - return it (re-registration case)
+		return base64.StdEncoding.EncodeToString(existingSecret.SecretKey), nil
+	}
+
+	// Generate shared secret
+	secretKey := make([]byte, s.config.SecretKeyLength)
+	if _, err := rand.Read(secretKey); err != nil {
+		return "", fmt.Errorf("failed to generate secret key: %w", err)
+	}
+
+	// Store the host secret
+	hostSecret := &store.HostSecret{
+		HostID:    hostID,
+		SecretKey: secretKey,
+		Algorithm: store.HostSecretAlgorithmHMACSHA256,
+		CreatedAt: time.Now(),
+		Status:    store.HostSecretStatusActive,
+	}
+
+	if err := s.store.CreateHostSecret(ctx, hostSecret); err != nil {
+		return "", fmt.Errorf("failed to store host secret: %w", err)
+	}
+
+	return base64.StdEncoding.EncodeToString(secretKey), nil
+}
+
 // =============================================================================
 // HMAC Signature Validation
 // =============================================================================
