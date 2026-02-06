@@ -173,10 +173,10 @@ start_server() {
     # Build command as array for proper handling
     local cmd=("$TEST_DIR/scion" "server" "start"
         "--enable-hub"
-        "--enable-runtime-host"
+        "--enable-runtime-broker"
         "--dev-auth"
         "--port" "$HUB_PORT"
-        "--runtime-host-port" "$RUNTIME_HOST_PORT"
+        "--runtime-broker-port" "$RUNTIME_HOST_PORT"
         "--template-cache-dir" "$TEST_DIR/cache/templates"
         "--template-cache-max" "10485760"
     )
