@@ -1762,8 +1762,7 @@ func (s *Server) handleRuntimeBrokerByIDInternal(w http.ResponseWriter, r *http.
 
 	// Handle groves action
 	if subPath == "groves" && r.Method == http.MethodGet {
-		// TODO: Implement getBrokerGroves endpoint
-		NotFound(w, "RuntimeBroker resource")
+		s.getBrokerGroves(w, r, id)
 		return
 	}
 
@@ -1897,6 +1896,66 @@ func (s *Server) handleBrokerHeartbeat(w http.ResponseWriter, r *http.Request, i
 	}
 
 	w.WriteHeader(http.StatusOK)
+}
+
+// BrokerGroveInfo describes a grove from a broker's perspective.
+type BrokerGroveInfo struct {
+	GroveID    string `json:"groveId"`
+	GroveName  string `json:"groveName"`
+	GitRemote  string `json:"gitRemote,omitempty"`
+	AgentCount int    `json:"agentCount"`
+	LocalPath  string `json:"localPath,omitempty"`
+}
+
+// ListBrokerGrovesResponse is the response for listing groves a broker provides.
+type ListBrokerGrovesResponse struct {
+	Groves []BrokerGroveInfo `json:"groves"`
+}
+
+func (s *Server) getBrokerGroves(w http.ResponseWriter, r *http.Request, brokerID string) {
+	ctx := r.Context()
+
+	// Verify broker exists
+	_, err := s.store.GetRuntimeBroker(ctx, brokerID)
+	if err != nil {
+		writeErrorFromErr(w, err, "")
+		return
+	}
+
+	// Get all groves this broker provides for
+	providers, err := s.store.GetBrokerGroves(ctx, brokerID)
+	if err != nil {
+		writeErrorFromErr(w, err, "")
+		return
+	}
+
+	// Build response with grove details
+	groves := make([]BrokerGroveInfo, 0, len(providers))
+	for _, p := range providers {
+		info := BrokerGroveInfo{
+			GroveID:   p.GroveID,
+			LocalPath: p.LocalPath,
+		}
+
+		// Fetch grove details for name and git remote
+		if grove, err := s.store.GetGrove(ctx, p.GroveID); err == nil {
+			info.GroveName = grove.Name
+			info.GitRemote = grove.GitRemote
+		}
+
+		// Count agents for this grove on this broker
+		agentResult, err := s.store.ListAgents(ctx, store.AgentFilter{
+			GroveID:         p.GroveID,
+			RuntimeBrokerID: brokerID,
+		}, store.ListOptions{Limit: 0})
+		if err == nil {
+			info.AgentCount = agentResult.TotalCount
+		}
+
+		groves = append(groves, info)
+	}
+
+	writeJSON(w, http.StatusOK, ListBrokerGrovesResponse{Groves: groves})
 }
 
 // ============================================================================
