@@ -13,10 +13,19 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/ptone/scion-agent/pkg/wsprotocol"
 	"golang.org/x/term"
+)
+
+const (
+	// connectTimeout is the maximum time to wait for WebSocket connection
+	connectTimeout = 30 * time.Second
+	// initialDataTimeout is the maximum time to wait for first data from server
+	// This helps detect when the server-side PTY stream fails silently
+	initialDataTimeout = 30 * time.Second
 )
 
 // PTYClientConfig holds configuration for the PTY client.
@@ -35,13 +44,14 @@ type PTYClientConfig struct {
 
 // PTYClient manages a WebSocket PTY connection.
 type PTYClient struct {
-	config    PTYClientConfig
-	conn      *websocket.Conn
-	termState *term.State
-	oldFd     int
-	writeMu   sync.Mutex
-	ctx       context.Context
-	cancel    context.CancelFunc
+	config       PTYClientConfig
+	conn         *websocket.Conn
+	termState    *term.State
+	oldFd        int
+	writeMu      sync.Mutex
+	ctx          context.Context
+	cancel       context.CancelFunc
+	receivedData bool // tracks whether we've received any data
 }
 
 // NewPTYClient creates a new PTY client.
@@ -68,14 +78,20 @@ func (c *PTYClient) Connect(ctx context.Context) error {
 		headers.Set("Authorization", "Bearer "+c.config.Token)
 	}
 
-	// Connect
+	// Connect with timeout
+	dialCtx, dialCancel := context.WithTimeout(ctx, connectTimeout)
+	defer dialCancel()
+
 	dialer := websocket.Dialer{
 		ReadBufferSize:  4096,
 		WriteBufferSize: 4096,
 	}
 
-	conn, resp, err := dialer.DialContext(ctx, wsURL, headers)
+	conn, resp, err := dialer.DialContext(dialCtx, wsURL, headers)
 	if err != nil {
+		if dialCtx.Err() == context.DeadlineExceeded {
+			return fmt.Errorf("connection timed out after %v", connectTimeout)
+		}
 		if resp != nil && resp.StatusCode >= 400 {
 			return fmt.Errorf("connection failed with status %d: %w", resp.StatusCode, err)
 		}
@@ -246,6 +262,11 @@ func (c *PTYClient) readFromStdin() error {
 
 // readFromWebSocket reads from WebSocket and writes to stdout.
 func (c *PTYClient) readFromWebSocket() error {
+	// Set initial read deadline to detect if server-side PTY fails to start
+	if err := c.conn.SetReadDeadline(time.Now().Add(initialDataTimeout)); err != nil {
+		return fmt.Errorf("failed to set read deadline: %w", err)
+	}
+
 	for {
 		select {
 		case <-c.ctx.Done():
@@ -258,7 +279,21 @@ func (c *PTYClient) readFromWebSocket() error {
 			if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
 				return nil
 			}
+			// Check if this is a timeout on initial data
+			if !c.receivedData {
+				if netErr, ok := err.(interface{ Timeout() bool }); ok && netErr.Timeout() {
+					return fmt.Errorf("timed out waiting for PTY data (server may have failed to start the session)")
+				}
+			}
 			return err
+		}
+
+		// Clear read deadline after receiving first data
+		if !c.receivedData {
+			c.receivedData = true
+			if err := c.conn.SetReadDeadline(time.Time{}); err != nil {
+				return fmt.Errorf("failed to clear read deadline: %w", err)
+			}
 		}
 
 		env, err := wsprotocol.ParseEnvelope(data)
