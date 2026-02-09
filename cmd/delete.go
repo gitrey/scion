@@ -69,7 +69,7 @@ var deleteCmd = &cobra.Command{
 
 			var deletedCount int
 			for _, a := range agents {
-				if a.ID == "" {
+				if a.ContainerID == "" {
 					continue // No container
 				}
 
