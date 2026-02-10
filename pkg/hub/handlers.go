@@ -811,9 +811,15 @@ func (s *Server) handleAgentLifecycle(w http.ResponseWriter, r *http.Request, id
 		return
 	}
 
-	if err := s.store.UpdateAgentStatus(ctx, id, store.AgentStatusUpdate{
+	statusUpdate := store.AgentStatusUpdate{
 		Status: newStatus,
-	}); err != nil {
+	}
+	// When stopping, also update container status so the hub immediately
+	// reflects the stopped state without waiting for the next heartbeat.
+	if action == "stop" {
+		statusUpdate.ContainerStatus = "stopped"
+	}
+	if err := s.store.UpdateAgentStatus(ctx, id, statusUpdate); err != nil {
 		writeErrorFromErr(w, err, "")
 		return
 	}

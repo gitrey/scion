@@ -484,6 +484,16 @@ func (s *Server) stopAgent(w http.ResponseWriter, r *http.Request, id string) {
 		return
 	}
 
+	// Send an immediate heartbeat so the hub gets the updated container status
+	// without waiting for the next periodic heartbeat interval.
+	if s.heartbeat != nil {
+		go func() {
+			if err := s.heartbeat.ForceHeartbeat(context.Background()); err != nil {
+				slog.Error("Failed to send forced heartbeat after stop", "agent", id, "error", err)
+			}
+		}()
+	}
+
 	writeJSON(w, http.StatusAccepted, map[string]string{
 		"status": "accepted",
 		"message": "Stop operation accepted",
