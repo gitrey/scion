@@ -140,7 +140,7 @@ func resolveEnvScope(cmd *cobra.Command, settings *config.Settings) (scope, scop
 			if settings.Hub != nil && settings.Hub.GroveID != "" {
 				scopeID = settings.Hub.GroveID
 			} else {
-				return "", "", fmt.Errorf("cannot infer grove ID: not registered with Hub. Use 'scion hub register' first or provide explicit grove ID")
+				return "", "", fmt.Errorf("cannot infer grove ID: not linked with Hub. Use 'scion hub link' first or provide explicit grove ID")
 			}
 		}
 		return scope, scopeID, nil
@@ -155,7 +155,7 @@ func resolveEnvScope(cmd *cobra.Command, settings *config.Settings) (scope, scop
 			if settings.Hub != nil && settings.Hub.BrokerID != "" {
 				scopeID = settings.Hub.BrokerID
 			} else {
-				return "", "", fmt.Errorf("cannot infer broker ID: not registered with Hub. Use 'scion hub register' first or provide explicit broker ID")
+				return "", "", fmt.Errorf("cannot infer broker ID: not linked with Hub. Use 'scion hub link' first or provide explicit broker ID")
 			}
 		}
 		return scope, scopeID, nil

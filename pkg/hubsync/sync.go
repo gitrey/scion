@@ -260,7 +260,7 @@ func EnsureHubReady(grovePath string, opts EnsureHubReadyOptions) (*HubContext, 
 			// No matching groves - ask for confirmation
 			if !ShowRegistrationPrompt(groveName, opts.AutoConfirm) {
 				return nil, fmt.Errorf("grove must be registered with Hub to perform this operation\n\n" +
-					"Register the grove: scion hub register\n" +
+					"Link this grove: scion hub link\n" +
 					"Or use local-only mode: scion --no-hub <command>")
 			}
 		}

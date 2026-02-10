@@ -353,7 +353,7 @@ func (s *Server) Start(ctx context.Context) error {
 	// Start heartbeat service if enabled and we have valid credentials
 	if s.config.HeartbeatEnabled && s.hubClient != nil && s.config.BrokerID != "" {
 		if !hasValidCredentials {
-			slog.Warn("Skipping heartbeat: no valid broker credentials (run 'scion hub register' first)")
+			slog.Warn("Skipping heartbeat: no valid broker credentials (run 'scion hub link' first)")
 		} else {
 			interval := s.config.HeartbeatInterval
 			if interval <= 0 {
@@ -375,7 +375,7 @@ func (s *Server) Start(ctx context.Context) error {
 	// Start control channel if enabled and we have valid credentials
 	if s.config.ControlChannelEnabled && s.config.HubEndpoint != "" && s.config.BrokerID != "" {
 		if !hasValidCredentials {
-			slog.Warn("Skipping control channel: no valid broker credentials (run 'scion hub register' first)")
+			slog.Warn("Skipping control channel: no valid broker credentials (run 'scion hub link' first)")
 		} else {
 			secretKey, err := base64.StdEncoding.DecodeString(s.brokerCredentials.SecretKey)
 			if err != nil {

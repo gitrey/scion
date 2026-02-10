@@ -613,7 +613,7 @@ func printGroveContext(client hubclient.Client, grovePath string, isGlobal bool,
 	if registeredGrove == nil {
 		fmt.Printf("Registered: no\n")
 		fmt.Println()
-		fmt.Println("Run 'scion hub register' to register this grove with the Hub.")
+		fmt.Println("Run 'scion hub link' to link this grove with the Hub.")
 		return
 	}
 
@@ -1825,7 +1825,7 @@ func listBrokersForGrove(ctx context.Context, client hubclient.Client, groveID s
 	if len(resp.Brokers) == 0 {
 		fmt.Println()
 		fmt.Println("Warning: This grove has no active runtime brokers.")
-		fmt.Println("Register one with 'scion hub register'")
+		fmt.Println("Register one with 'scion hub link'")
 		return
 	}
 
