@@ -1,0 +1,271 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package cmd
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/ptone/scion-agent/pkg/hubclient"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// deleteTestState captures and restores package-level vars for test isolation.
+type deleteTestState struct {
+	home           string
+	grovePath      string
+	preserveBranch bool
+	noHub          bool
+	autoConfirm    bool
+}
+
+func saveDeleteTestState() deleteTestState {
+	return deleteTestState{
+		home:           os.Getenv("HOME"),
+		grovePath:      grovePath,
+		preserveBranch: preserveBranch,
+		noHub:          noHub,
+		autoConfirm:    autoConfirm,
+	}
+}
+
+func (s deleteTestState) restore() {
+	os.Setenv("HOME", s.home)
+	grovePath = s.grovePath
+	preserveBranch = s.preserveBranch
+	noHub = s.noHub
+	autoConfirm = s.autoConfirm
+}
+
+// createAgentDir creates a minimal agent directory at <groveDir>/agents/<name>
+// to simulate a locally provisioned agent.
+func createAgentDir(t *testing.T, groveDir, name string) string {
+	t.Helper()
+	agentDir := filepath.Join(groveDir, "agents", name)
+	require.NoError(t, os.MkdirAll(agentDir, 0755))
+	// Write a marker file so the directory isn't empty
+	require.NoError(t, os.WriteFile(
+		filepath.Join(agentDir, "scion-agent.json"),
+		[]byte(`{"harness":"claude"}`),
+		0644,
+	))
+	return agentDir
+}
+
+// newDeleteMockHubServer creates a mock Hub server that handles grove-scoped
+// agent DELETE requests. Returns the server and a pointer to a slice that
+// records which agent names were deleted.
+func newDeleteMockHubServer(t *testing.T, groveID string) (*httptest.Server, *[]string) {
+	t.Helper()
+	var deletedAgents []string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		switch {
+		case r.URL.Path == "/healthz" && r.Method == http.MethodGet:
+			json.NewEncoder(w).Encode(map[string]interface{}{"status": "ok"})
+
+		case r.Method == http.MethodDelete:
+			// Extract agent name from path: /api/v1/groves/<groveID>/agents/<agentName>
+			prefix := "/api/v1/groves/" + groveID + "/agents/"
+			agentName := r.URL.Path[len(prefix):]
+			deletedAgents = append(deletedAgents, agentName)
+			w.WriteHeader(http.StatusNoContent)
+
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+
+	return server, &deletedAgents
+}
+
+func TestDeleteAgentsViaHub_CleansUpLocalFiles(t *testing.T) {
+	orig := saveDeleteTestState()
+	defer orig.restore()
+
+	tmpHome := t.TempDir()
+	os.Setenv("HOME", tmpHome)
+	preserveBranch = true // skip branch operations since there's no real git repo
+
+	groveID := "grove-del-123"
+	server, deletedAgents := newDeleteMockHubServer(t, groveID)
+	defer server.Close()
+
+	// Set up grove directory with an agent
+	groveDir := filepath.Join(tmpHome, "project", ".scion")
+	require.NoError(t, os.MkdirAll(groveDir, 0755))
+	grovePath = groveDir
+
+	agentDir := createAgentDir(t, groveDir, "test-agent")
+
+	// Verify agent dir exists before deletion
+	_, err := os.Stat(agentDir)
+	require.NoError(t, err, "agent directory should exist before deletion")
+
+	// Create hub client and context
+	client, err := hubclient.New(server.URL)
+	require.NoError(t, err)
+
+	hubCtx := &HubContext{
+		Client:   client,
+		Endpoint: server.URL,
+		GroveID:  groveID,
+	}
+
+	// Run the function under test
+	err = deleteAgentsViaHub(hubCtx, []string{"test-agent"})
+	require.NoError(t, err)
+
+	// Verify Hub API was called
+	require.Len(t, *deletedAgents, 1)
+	assert.Equal(t, "test-agent", (*deletedAgents)[0])
+
+	// Verify local agent directory was cleaned up
+	_, err = os.Stat(agentDir)
+	assert.True(t, os.IsNotExist(err), "agent directory should be deleted after Hub deletion")
+}
+
+func TestDeleteAgentsViaHub_MultipleAgents(t *testing.T) {
+	orig := saveDeleteTestState()
+	defer orig.restore()
+
+	tmpHome := t.TempDir()
+	os.Setenv("HOME", tmpHome)
+	preserveBranch = true
+
+	groveID := "grove-multi-456"
+	server, deletedAgents := newDeleteMockHubServer(t, groveID)
+	defer server.Close()
+
+	groveDir := filepath.Join(tmpHome, "project", ".scion")
+	require.NoError(t, os.MkdirAll(groveDir, 0755))
+	grovePath = groveDir
+
+	agent1Dir := createAgentDir(t, groveDir, "agent-one")
+	agent2Dir := createAgentDir(t, groveDir, "agent-two")
+
+	client, err := hubclient.New(server.URL)
+	require.NoError(t, err)
+
+	hubCtx := &HubContext{
+		Client:   client,
+		Endpoint: server.URL,
+		GroveID:  groveID,
+	}
+
+	err = deleteAgentsViaHub(hubCtx, []string{"agent-one", "agent-two"})
+	require.NoError(t, err)
+
+	// Both agents should be deleted on Hub
+	require.Len(t, *deletedAgents, 2)
+
+	// Both local directories should be cleaned up
+	_, err = os.Stat(agent1Dir)
+	assert.True(t, os.IsNotExist(err), "agent-one directory should be deleted")
+	_, err = os.Stat(agent2Dir)
+	assert.True(t, os.IsNotExist(err), "agent-two directory should be deleted")
+}
+
+func TestDeleteAgentsViaHub_HubFailsSkipsLocalCleanup(t *testing.T) {
+	orig := saveDeleteTestState()
+	defer orig.restore()
+
+	tmpHome := t.TempDir()
+	os.Setenv("HOME", tmpHome)
+	preserveBranch = true
+
+	groveID := "grove-fail-789"
+
+	// Server that returns 404 for all agent deletes
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/healthz" {
+			json.NewEncoder(w).Encode(map[string]interface{}{"status": "ok"})
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": map[string]interface{}{
+				"code":    "not_found",
+				"message": "Resource not found",
+			},
+		})
+	}))
+	defer server.Close()
+
+	groveDir := filepath.Join(tmpHome, "project", ".scion")
+	require.NoError(t, os.MkdirAll(groveDir, 0755))
+	grovePath = groveDir
+
+	agentDir := createAgentDir(t, groveDir, "missing-agent")
+
+	client, err := hubclient.New(server.URL)
+	require.NoError(t, err)
+
+	hubCtx := &HubContext{
+		Client:   client,
+		Endpoint: server.URL,
+		GroveID:  groveID,
+	}
+
+	err = deleteAgentsViaHub(hubCtx, []string{"missing-agent"})
+	require.Error(t, err, "should return error when Hub delete fails")
+
+	// Local files should NOT be cleaned up when Hub delete fails
+	_, err = os.Stat(agentDir)
+	assert.NoError(t, err, "agent directory should still exist when Hub deletion fails")
+}
+
+func TestDeleteAgentsViaHub_NoLocalFiles(t *testing.T) {
+	orig := saveDeleteTestState()
+	defer orig.restore()
+
+	tmpHome := t.TempDir()
+	os.Setenv("HOME", tmpHome)
+	preserveBranch = true
+
+	groveID := "grove-nolocal-101"
+	server, deletedAgents := newDeleteMockHubServer(t, groveID)
+	defer server.Close()
+
+	groveDir := filepath.Join(tmpHome, "project", ".scion")
+	require.NoError(t, os.MkdirAll(filepath.Join(groveDir, "agents"), 0755))
+	grovePath = groveDir
+
+	// Don't create any agent directory - simulates agent existing only on Hub
+
+	client, err := hubclient.New(server.URL)
+	require.NoError(t, err)
+
+	hubCtx := &HubContext{
+		Client:   client,
+		Endpoint: server.URL,
+		GroveID:  groveID,
+	}
+
+	// Should succeed without error even when no local files exist
+	err = deleteAgentsViaHub(hubCtx, []string{"hub-only-agent"})
+	require.NoError(t, err)
+
+	require.Len(t, *deletedAgents, 1)
+	assert.Equal(t, "hub-only-agent", (*deletedAgents)[0])
+}
