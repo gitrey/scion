@@ -486,6 +486,9 @@ func MergeScionConfig(base, override *api.ScionConfig) *api.ScionConfig {
 	if override.Harness != "" {
 		result.Harness = override.Harness
 	}
+	if override.HarnessConfig != "" {
+		result.HarnessConfig = override.HarnessConfig
+	}
 	if override.ConfigDir != "" {
 		result.ConfigDir = override.ConfigDir
 	}

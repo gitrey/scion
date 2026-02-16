@@ -26,6 +26,125 @@ import (
 	"github.com/ptone/scion-agent/pkg/api"
 )
 
+// ResolveHarnessConfig looks up a named harness config and merges profile-level overrides.
+// If profileName is empty, ActiveProfile is used. If the config name is not found, an error is returned.
+func (vs *VersionedSettings) ResolveHarnessConfig(profileName, harnessConfigName string) (HarnessConfigEntry, error) {
+	if profileName == "" {
+		profileName = vs.ActiveProfile
+	}
+
+	baseConfig, ok := vs.HarnessConfigs[harnessConfigName]
+	if !ok {
+		return HarnessConfigEntry{}, fmt.Errorf("harness config %q not found", harnessConfigName)
+	}
+
+	profile, ok := vs.Profiles[profileName]
+	if !ok {
+		return baseConfig, nil
+	}
+
+	result := baseConfig
+
+	// Merge profile-level env
+	if profile.Env != nil {
+		result.Env = mergeMaps(result.Env, profile.Env)
+	}
+
+	// Merge profile-level volumes
+	if profile.Volumes != nil {
+		result.Volumes = append(result.Volumes, profile.Volumes...)
+	}
+
+	// Apply harness overrides from the profile
+	if profile.HarnessOverrides != nil {
+		if override, ok := profile.HarnessOverrides[harnessConfigName]; ok {
+			if override.Image != "" {
+				result.Image = override.Image
+			}
+			if override.User != "" {
+				result.User = override.User
+			}
+			if override.AuthSelectedType != "" {
+				result.AuthSelectedType = override.AuthSelectedType
+			}
+			if override.Env != nil {
+				result.Env = mergeMaps(result.Env, override.Env)
+			}
+			if override.Volumes != nil {
+				result.Volumes = append(result.Volumes, override.Volumes...)
+			}
+		}
+	}
+
+	return result, nil
+}
+
+// ResolveRuntime resolves the runtime config for a profile.
+// Returns the runtime config, the effective runtime type, and any error.
+// If profileName is empty, ActiveProfile is used.
+// The runtime type is V1RuntimeConfig.Type if set, otherwise the map key name.
+func (vs *VersionedSettings) ResolveRuntime(profileName string) (V1RuntimeConfig, string, error) {
+	if profileName == "" {
+		profileName = vs.ActiveProfile
+	}
+	profile, ok := vs.Profiles[profileName]
+	if !ok {
+		return V1RuntimeConfig{}, "", fmt.Errorf("profile %q not found", profileName)
+	}
+	rtConfig, ok := vs.Runtimes[profile.Runtime]
+	if !ok {
+		return V1RuntimeConfig{}, "", fmt.Errorf("runtime %q not found for profile %q", profile.Runtime, profileName)
+	}
+
+	// Resolve the effective runtime type: explicit Type field, or map key name
+	runtimeType := rtConfig.Type
+	if runtimeType == "" {
+		runtimeType = profile.Runtime
+	}
+
+	// Merge profile-level env into runtime config
+	if profile.Env != nil {
+		rtConfig.Env = mergeMaps(rtConfig.Env, profile.Env)
+	}
+
+	return rtConfig, runtimeType, nil
+}
+
+// GetHubEndpoint returns the Hub endpoint from settings, or empty string if not configured.
+func (vs *VersionedSettings) GetHubEndpoint() string {
+	if vs.Hub != nil {
+		return vs.Hub.Endpoint
+	}
+	return ""
+}
+
+// IsHubConfigured returns true if Hub settings are configured.
+func (vs *VersionedSettings) IsHubConfigured() bool {
+	return vs.Hub != nil && vs.Hub.Endpoint != ""
+}
+
+// IsHubEnabled returns true if Hub integration is explicitly enabled.
+func (vs *VersionedSettings) IsHubEnabled() bool {
+	return vs.Hub != nil && vs.Hub.Enabled != nil && *vs.Hub.Enabled
+}
+
+// IsHubExplicitlyDisabled returns true if Hub integration is explicitly disabled.
+func (vs *VersionedSettings) IsHubExplicitlyDisabled() bool {
+	return vs.Hub != nil && vs.Hub.Enabled != nil && !*vs.Hub.Enabled
+}
+
+// IsHubLocalOnly returns true if the grove is configured for local-only mode.
+func (vs *VersionedSettings) IsHubLocalOnly() bool {
+	return vs.Hub != nil && vs.Hub.LocalOnly != nil && *vs.Hub.LocalOnly
+}
+
+// PrintDeprecationWarnings prints deprecation warnings to stderr.
+func PrintDeprecationWarnings(warnings []string) {
+	for _, w := range warnings {
+		fmt.Fprintf(os.Stderr, "Warning: %s\n", w)
+	}
+}
+
 // VersionedSettings is the root configuration struct for versioned settings (v1+).
 type VersionedSettings struct {
 	SchemaVersion   string                          `json:"schema_version" yaml:"schema_version" koanf:"schema_version"`

@@ -66,14 +66,15 @@ arguments are provided, an empty prompt.md is created for later editing.`,
 		mgr := agent.NewManager(rt)
 
 		opts := api.StartOptions{
-			Name:      agentName,
-			Task:      task,
-			Template:  templateName,
-			Profile:   effectiveProfile,
-			Image:     agentImage,
-			GrovePath: grovePath,
-			Branch:    branch,
-			Workspace: workspace,
+			Name:          agentName,
+			Task:          task,
+			Template:      templateName,
+			Profile:       effectiveProfile,
+			HarnessConfig: harnessConfigFlag,
+			Image:         agentImage,
+			GrovePath:     grovePath,
+			Branch:        branch,
+			Workspace:     workspace,
 		}
 
 		// Check if container already exists
@@ -225,6 +226,7 @@ func init() {
 	createCmd.Flags().StringVarP(&branch, "branch", "b", "", "Git branch to use for the agent workspace")
 	createCmd.Flags().StringVarP(&workspace, "workspace", "w", "", "Host path to mount as /workspace")
 	createCmd.Flags().StringVar(&runtimeBrokerID, "broker", "", "Preferred runtime broker ID or name")
+	createCmd.Flags().StringVar(&harnessConfigFlag, "harness-config", "", "Named harness configuration to use")
 
 	// Template resolution flags for Hub mode (Section 9.4)
 	createCmd.Flags().BoolVar(&uploadTemplate, "upload-template", false, "Automatically upload local template to Hub if not found")

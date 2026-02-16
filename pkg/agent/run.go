@@ -96,14 +96,24 @@ func (m *AgentManager) Start(ctx context.Context, opts api.StartOptions) (*api.A
 	}
 
 	// Load settings for registry resolution
-	settings, err := config.LoadSettings(projectDir)
+	settings, settingsWarnings, err := config.LoadEffectiveSettings(projectDir)
 	if err != nil {
 		// Fallback to defaults or log?
 	}
+	config.PrintDeprecationWarnings(settingsWarnings)
 
 	harnessName := ""
 	if finalScionCfg != nil {
 		harnessName = finalScionCfg.Harness
+	}
+
+	// Resolve harness config name: CLI flag > template field > legacy fallback (harness name)
+	harnessConfigName := opts.HarnessConfig
+	if harnessConfigName == "" && finalScionCfg != nil && finalScionCfg.HarnessConfig != "" {
+		harnessConfigName = finalScionCfg.HarnessConfig
+	}
+	if harnessConfigName == "" {
+		harnessConfigName = harnessName
 	}
 
 	// Default values
@@ -112,8 +122,8 @@ func (m *AgentManager) Start(ctx context.Context, opts api.StartOptions) (*api.A
 	useTmux := false
 	profileName := opts.Profile
 
-	if settings != nil && harnessName != "" {
-		hConfig, err := settings.ResolveHarness(opts.Profile, harnessName)
+	if settings != nil && harnessConfigName != "" {
+		hConfig, err := settings.ResolveHarnessConfig(opts.Profile, harnessConfigName)
 		if err == nil {
 			resolvedImage = hConfig.Image
 			unixUsername = hConfig.User

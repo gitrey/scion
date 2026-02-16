@@ -106,7 +106,8 @@ func ProvisionAgent(ctx context.Context, agentName string, templateName string, 
 		return "", "", nil, err
 	}
 
-	settings, _ := config.LoadSettings(projectDir)
+	settings, warnings, _ := config.LoadEffectiveSettings(projectDir)
+	config.PrintDeprecationWarnings(warnings)
 	if profileName == "" && settings != nil {
 		profileName = settings.ActiveProfile
 	}
@@ -256,7 +257,13 @@ func ProvisionAgent(ctx context.Context, agentName string, templateName string, 
 
 	// Merge settings env, auth, and resources if available
 	if settings != nil && finalScionCfg.Harness != "" {
-		hConfig, err := settings.ResolveHarness(profileName, finalScionCfg.Harness)
+		// Resolve harness config name: CLI flag > template field > legacy fallback (harness name)
+		harnessConfigName := finalScionCfg.HarnessConfig
+		if harnessConfigName == "" {
+			harnessConfigName = finalScionCfg.Harness
+		}
+
+		hConfig, err := settings.ResolveHarnessConfig(profileName, harnessConfigName)
 		if err == nil {
 			settingsCfg := &api.ScionConfig{}
 			if hConfig.Env != nil {
@@ -276,10 +283,11 @@ func ProvisionAgent(ctx context.Context, agentName string, templateName string, 
 		}
 
 		// Merge profile-level resources (lower priority than template/agent-level resources).
-		if rp := profileName; rp == "" {
-			rp = settings.ActiveProfile
+		effectiveProfile := profileName
+		if effectiveProfile == "" {
+			effectiveProfile = settings.ActiveProfile
 		}
-		if p, ok := settings.Profiles[profileName]; ok && p.Resources != nil {
+		if p, ok := settings.Profiles[effectiveProfile]; ok && p.Resources != nil {
 			if finalScionCfg.Resources == nil {
 				cpy := *p.Resources
 				finalScionCfg.Resources = &cpy
@@ -292,8 +300,8 @@ func ProvisionAgent(ctx context.Context, agentName string, templateName string, 
 		}
 
 		// Merge harness-override resources on top of everything.
-		if p, ok := settings.Profiles[profileName]; ok && p.HarnessOverrides != nil {
-			if ho, ok := p.HarnessOverrides[finalScionCfg.Harness]; ok && ho.Resources != nil {
+		if p, ok := settings.Profiles[effectiveProfile]; ok && p.HarnessOverrides != nil {
+			if ho, ok := p.HarnessOverrides[harnessConfigName]; ok && ho.Resources != nil {
 				finalScionCfg.Resources = config.MergeResourceSpec(finalScionCfg.Resources, ho.Resources)
 			}
 		}
@@ -487,13 +495,14 @@ func GetAgent(ctx context.Context, agentName string, templateName string, agentI
 	}
 
 	// Load settings for default template
-	settings, err := config.LoadSettings(projectDir)
+	vs, vsWarnings, err := config.LoadEffectiveSettings(projectDir)
 	if err != nil {
 		// Just log or ignore
 	}
+	config.PrintDeprecationWarnings(vsWarnings)
 	defaultTemplate := "gemini"
-	if settings != nil && settings.DefaultTemplate != "" {
-		defaultTemplate = settings.DefaultTemplate
+	if vs != nil && vs.DefaultTemplate != "" {
+		defaultTemplate = vs.DefaultTemplate
 	}
 
 	if _, err := os.Stat(agentDir); os.IsNotExist(err) {

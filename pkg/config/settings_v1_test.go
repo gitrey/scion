@@ -22,6 +22,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ptone/scion-agent/pkg/api"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
@@ -869,6 +870,347 @@ active_profile: custom
 	require.NoError(t, os.WriteFile(filepath.Join(groveDir, "settings.yaml"), []byte(versionedSettings), 0644))
 
 	assert.True(t, detectHierarchyFormat(groveDir))
+}
+
+// --- ResolveHarnessConfig tests ---
+
+func TestResolveHarnessConfig_Default(t *testing.T) {
+	vs := &VersionedSettings{
+		ActiveProfile: "local",
+		HarnessConfigs: map[string]HarnessConfigEntry{
+			"gemini": {
+				Harness: "gemini",
+				Image:   "example.com/gemini:latest",
+				User:    "scion",
+			},
+		},
+		Profiles: map[string]V1ProfileConfig{
+			"local": {Runtime: "docker"},
+		},
+	}
+
+	hc, err := vs.ResolveHarnessConfig("", "gemini")
+	require.NoError(t, err)
+	assert.Equal(t, "example.com/gemini:latest", hc.Image)
+	assert.Equal(t, "scion", hc.User)
+	assert.Equal(t, "gemini", hc.Harness)
+}
+
+func TestResolveHarnessConfig_Named(t *testing.T) {
+	vs := &VersionedSettings{
+		ActiveProfile: "local",
+		HarnessConfigs: map[string]HarnessConfigEntry{
+			"gemini": {
+				Harness: "gemini",
+				Image:   "example.com/gemini:latest",
+				User:    "scion",
+			},
+			"gemini-high-security": {
+				Harness: "gemini",
+				Image:   "example.com/gemini:hardened",
+				User:    "restricted",
+				Model:   "gemini-2.5-pro",
+			},
+		},
+		Profiles: map[string]V1ProfileConfig{
+			"local": {Runtime: "docker"},
+		},
+	}
+
+	hc, err := vs.ResolveHarnessConfig("local", "gemini-high-security")
+	require.NoError(t, err)
+	assert.Equal(t, "example.com/gemini:hardened", hc.Image)
+	assert.Equal(t, "restricted", hc.User)
+	assert.Equal(t, "gemini", hc.Harness)
+	assert.Equal(t, "gemini-2.5-pro", hc.Model)
+}
+
+func TestResolveHarnessConfig_WithProfileOverrides(t *testing.T) {
+	vs := &VersionedSettings{
+		ActiveProfile: "staging",
+		HarnessConfigs: map[string]HarnessConfigEntry{
+			"gemini": {
+				Harness: "gemini",
+				Image:   "example.com/gemini:latest",
+				User:    "scion",
+				Env:     map[string]string{"BASE_KEY": "base_value"},
+			},
+		},
+		Profiles: map[string]V1ProfileConfig{
+			"staging": {
+				Runtime: "docker",
+				Env:     map[string]string{"PROFILE_KEY": "profile_value"},
+				Volumes: []api.VolumeMount{{Source: "/profile/vol", Target: "/mnt/vol"}},
+				HarnessOverrides: map[string]HarnessOverride{
+					"gemini": {
+						Image: "example.com/gemini:staging",
+						Env:   map[string]string{"OVERRIDE_KEY": "override_value"},
+					},
+				},
+			},
+		},
+	}
+
+	hc, err := vs.ResolveHarnessConfig("", "gemini")
+	require.NoError(t, err)
+	assert.Equal(t, "example.com/gemini:staging", hc.Image, "image should be overridden by profile")
+	assert.Equal(t, "scion", hc.User, "user should remain from base config")
+	assert.Equal(t, "base_value", hc.Env["BASE_KEY"], "base env should be preserved")
+	assert.Equal(t, "profile_value", hc.Env["PROFILE_KEY"], "profile env should be merged")
+	assert.Equal(t, "override_value", hc.Env["OVERRIDE_KEY"], "override env should be merged")
+	assert.Len(t, hc.Volumes, 1, "profile volume should be appended")
+	assert.Equal(t, "/mnt/vol", hc.Volumes[0].Target)
+}
+
+func TestResolveHarnessConfig_NotFound(t *testing.T) {
+	vs := &VersionedSettings{
+		ActiveProfile: "local",
+		HarnessConfigs: map[string]HarnessConfigEntry{
+			"gemini": {Harness: "gemini", Image: "test"},
+		},
+		Profiles: map[string]V1ProfileConfig{
+			"local": {Runtime: "docker"},
+		},
+	}
+
+	_, err := vs.ResolveHarnessConfig("", "nonexistent")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "nonexistent")
+}
+
+func TestResolveHarnessConfig_ProfileNotFound(t *testing.T) {
+	// When the profile is not found, we should still return the base config without error.
+	vs := &VersionedSettings{
+		ActiveProfile: "missing-profile",
+		HarnessConfigs: map[string]HarnessConfigEntry{
+			"gemini": {Harness: "gemini", Image: "test", User: "scion"},
+		},
+		Profiles: map[string]V1ProfileConfig{},
+	}
+
+	hc, err := vs.ResolveHarnessConfig("", "gemini")
+	require.NoError(t, err)
+	assert.Equal(t, "test", hc.Image)
+	assert.Equal(t, "scion", hc.User)
+}
+
+// --- ResolveRuntime tests ---
+
+func TestResolveRuntime_Basic(t *testing.T) {
+	vs := &VersionedSettings{
+		ActiveProfile: "local",
+		Runtimes: map[string]V1RuntimeConfig{
+			"docker": {Type: "docker", Host: "tcp://localhost:2375"},
+		},
+		Profiles: map[string]V1ProfileConfig{
+			"local": {Runtime: "docker"},
+		},
+	}
+
+	rtConfig, runtimeType, err := vs.ResolveRuntime("")
+	require.NoError(t, err)
+	assert.Equal(t, "docker", runtimeType)
+	assert.Equal(t, "tcp://localhost:2375", rtConfig.Host)
+}
+
+func TestResolveRuntime_WithType(t *testing.T) {
+	// Runtime with explicit Type field different from map key
+	vs := &VersionedSettings{
+		ActiveProfile: "remote",
+		Runtimes: map[string]V1RuntimeConfig{
+			"my-remote-cluster": {
+				Type:      "kubernetes",
+				Namespace: "scion",
+				Context:   "prod-cluster",
+			},
+		},
+		Profiles: map[string]V1ProfileConfig{
+			"remote": {Runtime: "my-remote-cluster"},
+		},
+	}
+
+	rtConfig, runtimeType, err := vs.ResolveRuntime("")
+	require.NoError(t, err)
+	assert.Equal(t, "kubernetes", runtimeType, "should use explicit Type field")
+	assert.Equal(t, "scion", rtConfig.Namespace)
+	assert.Equal(t, "prod-cluster", rtConfig.Context)
+}
+
+func TestResolveRuntime_TypeFromKey(t *testing.T) {
+	// Type field absent — should fall back to map key name
+	vs := &VersionedSettings{
+		ActiveProfile: "local",
+		Runtimes: map[string]V1RuntimeConfig{
+			"docker": {Host: "unix:///var/run/docker.sock"},
+		},
+		Profiles: map[string]V1ProfileConfig{
+			"local": {Runtime: "docker"},
+		},
+	}
+
+	_, runtimeType, err := vs.ResolveRuntime("")
+	require.NoError(t, err)
+	assert.Equal(t, "docker", runtimeType, "should fall back to map key name when Type is empty")
+}
+
+func TestResolveRuntime_ProfileEnvMerge(t *testing.T) {
+	vs := &VersionedSettings{
+		ActiveProfile: "local",
+		Runtimes: map[string]V1RuntimeConfig{
+			"docker": {
+				Type: "docker",
+				Env:  map[string]string{"RUNTIME_KEY": "runtime_value"},
+			},
+		},
+		Profiles: map[string]V1ProfileConfig{
+			"local": {
+				Runtime: "docker",
+				Env:     map[string]string{"PROFILE_KEY": "profile_value"},
+			},
+		},
+	}
+
+	rtConfig, _, err := vs.ResolveRuntime("")
+	require.NoError(t, err)
+	assert.Equal(t, "runtime_value", rtConfig.Env["RUNTIME_KEY"], "runtime env should be preserved")
+	assert.Equal(t, "profile_value", rtConfig.Env["PROFILE_KEY"], "profile env should be merged")
+}
+
+func TestResolveRuntime_ProfileNotFound(t *testing.T) {
+	vs := &VersionedSettings{
+		ActiveProfile: "nonexistent",
+		Runtimes: map[string]V1RuntimeConfig{
+			"docker": {Type: "docker"},
+		},
+		Profiles: map[string]V1ProfileConfig{},
+	}
+
+	_, _, err := vs.ResolveRuntime("")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "nonexistent")
+}
+
+func TestResolveRuntime_RuntimeNotFound(t *testing.T) {
+	vs := &VersionedSettings{
+		ActiveProfile: "local",
+		Runtimes:      map[string]V1RuntimeConfig{},
+		Profiles: map[string]V1ProfileConfig{
+			"local": {Runtime: "missing-runtime"},
+		},
+	}
+
+	_, _, err := vs.ResolveRuntime("")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "missing-runtime")
+}
+
+// --- Hub helper method tests ---
+
+func TestVersionedSettings_GetHubEndpoint(t *testing.T) {
+	vs := &VersionedSettings{}
+	assert.Equal(t, "", vs.GetHubEndpoint())
+
+	vs.Hub = &V1HubClientConfig{Endpoint: "https://hub.example.com"}
+	assert.Equal(t, "https://hub.example.com", vs.GetHubEndpoint())
+}
+
+func TestVersionedSettings_IsHubConfigured(t *testing.T) {
+	vs := &VersionedSettings{}
+	assert.False(t, vs.IsHubConfigured())
+
+	vs.Hub = &V1HubClientConfig{}
+	assert.False(t, vs.IsHubConfigured())
+
+	vs.Hub.Endpoint = "https://hub.example.com"
+	assert.True(t, vs.IsHubConfigured())
+}
+
+func TestVersionedSettings_IsHubEnabled(t *testing.T) {
+	vs := &VersionedSettings{}
+	assert.False(t, vs.IsHubEnabled())
+
+	vs.Hub = &V1HubClientConfig{}
+	assert.False(t, vs.IsHubEnabled())
+
+	vs.Hub.Enabled = boolPtr(false)
+	assert.False(t, vs.IsHubEnabled())
+
+	vs.Hub.Enabled = boolPtr(true)
+	assert.True(t, vs.IsHubEnabled())
+}
+
+func TestVersionedSettings_IsHubExplicitlyDisabled(t *testing.T) {
+	vs := &VersionedSettings{}
+	assert.False(t, vs.IsHubExplicitlyDisabled())
+
+	vs.Hub = &V1HubClientConfig{Enabled: boolPtr(true)}
+	assert.False(t, vs.IsHubExplicitlyDisabled())
+
+	vs.Hub.Enabled = boolPtr(false)
+	assert.True(t, vs.IsHubExplicitlyDisabled())
+}
+
+func TestVersionedSettings_IsHubLocalOnly(t *testing.T) {
+	vs := &VersionedSettings{}
+	assert.False(t, vs.IsHubLocalOnly())
+
+	vs.Hub = &V1HubClientConfig{}
+	assert.False(t, vs.IsHubLocalOnly())
+
+	vs.Hub.LocalOnly = boolPtr(true)
+	assert.True(t, vs.IsHubLocalOnly())
+}
+
+// --- Compatibility test ---
+
+func TestLegacyAndVersionedResolution_SameResult(t *testing.T) {
+	// Build legacy settings
+	tmux := true
+	legacy := &Settings{
+		ActiveProfile: "local",
+		Runtimes: map[string]RuntimeConfig{
+			"docker": {Host: "tcp://localhost:2375"},
+		},
+		Harnesses: map[string]HarnessConfig{
+			"gemini": {
+				Image: "example.com/gemini:latest",
+				User:  "scion",
+				Env:   map[string]string{"KEY1": "val1"},
+				Volumes: []api.VolumeMount{
+					{Source: "/host/path", Target: "/container/path"},
+				},
+			},
+		},
+		Profiles: map[string]ProfileConfig{
+			"local": {
+				Runtime: "docker",
+				Tmux:    &tmux,
+				Env:     map[string]string{"PROFILE_KEY": "profile_val"},
+				HarnessOverrides: map[string]HarnessOverride{
+					"gemini": {
+						Env: map[string]string{"OVERRIDE_KEY": "override_val"},
+					},
+				},
+			},
+		},
+	}
+
+	// Resolve via legacy path
+	legacyHC, err := legacy.ResolveHarness("local", "gemini")
+	require.NoError(t, err)
+
+	// Adapt to versioned and resolve
+	vs, _ := AdaptLegacySettings(legacy)
+	versionedHC, err := vs.ResolveHarnessConfig("local", "gemini")
+	require.NoError(t, err)
+
+	// Compare results
+	assert.Equal(t, legacyHC.Image, versionedHC.Image, "image should match")
+	assert.Equal(t, legacyHC.User, versionedHC.User, "user should match")
+	assert.Equal(t, legacyHC.Env["KEY1"], versionedHC.Env["KEY1"], "base env should match")
+	assert.Equal(t, legacyHC.Env["PROFILE_KEY"], versionedHC.Env["PROFILE_KEY"], "profile env should match")
+	assert.Equal(t, legacyHC.Env["OVERRIDE_KEY"], versionedHC.Env["OVERRIDE_KEY"], "override env should match")
+	assert.Equal(t, len(legacyHC.Volumes), len(versionedHC.Volumes), "volume count should match")
 }
 
 // --- Helper ---

@@ -160,8 +160,9 @@ type GeminiConfig struct {
 }
 
 type ScionConfig struct {
-	Harness     string            `json:"harness,omitempty" yaml:"harness,omitempty"`
-	ConfigDir   string            `json:"config_dir,omitempty" yaml:"config_dir,omitempty"`
+	Harness       string            `json:"harness,omitempty" yaml:"harness,omitempty"`
+	HarnessConfig string            `json:"harness_config,omitempty" yaml:"harness_config,omitempty"`
+	ConfigDir     string            `json:"config_dir,omitempty" yaml:"config_dir,omitempty"`
 	Env         map[string]string `json:"env,omitempty" yaml:"env,omitempty"`
 	Volumes     []VolumeMount     `json:"volumes,omitempty" yaml:"volumes,omitempty"`
 	Detached    *bool             `json:"detached" yaml:"detached"`
@@ -271,6 +272,7 @@ type StartOptions struct {
 	Task            string
 	Template        string
 	Profile         string
+	HarnessConfig   string
 	Image           string
 	GrovePath       string
 	Env             map[string]string

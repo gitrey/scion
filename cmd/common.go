@@ -38,13 +38,14 @@ import (
 )
 
 var (
-	templateName  string
-	agentImage    string
-	noAuth        bool
-	attach        bool
-	branch        string
-	workspace     string
-	runtimeBrokerID string
+	templateName      string
+	agentImage        string
+	noAuth            bool
+	attach            bool
+	branch            string
+	workspace         string
+	runtimeBrokerID   string
+	harnessConfigFlag string
 )
 
 // HubContext holds the context for Hub operations.
@@ -280,17 +281,18 @@ func RunAgent(cmd *cobra.Command, args []string, resume bool) error {
 	}
 
 	opts := api.StartOptions{
-		Name:      agentName,
-		Task:      strings.TrimSpace(task),
-		Template:  templateName,
-		Profile:   effectiveProfile,
-		Image:     resolvedImage,
-		GrovePath: grovePath,
-		Resume:    resume,
-		Detached:  detached,
-		NoAuth:    noAuth,
-		Branch:    branch,
-		Workspace: workspace,
+		Name:          agentName,
+		Task:          strings.TrimSpace(task),
+		Template:      templateName,
+		Profile:       effectiveProfile,
+		HarnessConfig: harnessConfigFlag,
+		Image:         resolvedImage,
+		GrovePath:     grovePath,
+		Resume:        resume,
+		Detached:      detached,
+		NoAuth:        noAuth,
+		Branch:        branch,
+		Workspace:     workspace,
 	}
 
 	// Propagate debug mode to container so sciontool logs debug info

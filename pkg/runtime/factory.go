@@ -30,17 +30,17 @@ import (
 // agent configuration (if available via GetAgentSettings), and grove/global settings.
 func GetRuntime(grovePath string, profileName string) Runtime {
 	projectDir, _ := config.GetResolvedProjectDir(grovePath)
-	s, _ := config.LoadSettings(projectDir)
+	vs, warnings, _ := config.LoadEffectiveSettings(projectDir)
+	config.PrintDeprecationWarnings(warnings)
 
-	util.Debugf("GetRuntime: grovePath=%q, profileName=%q, projectDir=%q, hasSettings=%v", grovePath, profileName, projectDir, s != nil)
+	util.Debugf("GetRuntime: grovePath=%q, profileName=%q, projectDir=%q, hasSettings=%v", grovePath, profileName, projectDir, vs != nil)
 
-	var rtConfig config.RuntimeConfig
+	var rtConfig config.V1RuntimeConfig
 	var runtimeType string
 
-	if s != nil {
+	if vs != nil {
 		var err error
-		var rtName string
-		rtConfig, rtName, err = s.ResolveRuntime(profileName)
+		rtConfig, runtimeType, err = vs.ResolveRuntime(profileName)
 		if err != nil {
 			util.Debugf("GetRuntime: ResolveRuntime failed: %v", err)
 			// If profile resolution fails, we might be passed a direct runtime type
@@ -54,7 +54,6 @@ func GetRuntime(grovePath string, profileName string) Runtime {
 				util.Debugf("GetRuntime: fallback to auto-detection")
 			}
 		} else {
-			runtimeType = rtName
 			util.Debugf("GetRuntime: resolved runtime from settings: %s", runtimeType)
 		}
 	} else {

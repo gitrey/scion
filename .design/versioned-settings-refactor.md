@@ -672,19 +672,29 @@ WARNING: Legacy settings format detected in /path/to/settings.yaml
 - `versionedEnvKeyMapper` uses simpler snake_case-native mapping (no camelCase conversion), fixing `SCION_HUB_GROVE_ID`, `SCION_HUB_LOCAL_ONLY`, `SCION_CLI_AUTOHELP`, `SCION_CLI_INTERACTIVE_DISABLED`.
 - 24 new tests in `settings_v1_test.go`; all existing tests pass unchanged.
 
-### Phase 3: Consumer Migration — Core Resolution
+### Phase 3: Consumer Migration — Core Resolution ✅
 
 **Goal:** Wire the new settings into the core resolution and provisioning paths.
 
+**Status: Complete.** Implemented in the `settings-refactor` branch.
+
 **Deliverables:**
-1. Add `ResolveHarnessConfig(profileName, harnessConfigName string) (HarnessConfigEntry, error)` to `VersionedSettings` — replaces `ResolveHarness` with support for named configs.
-2. Add `ResolveRuntime(profileName string) (RuntimeConfig, string, error)` to `VersionedSettings` — same semantics, now uses `type` field.
-3. Update `pkg/agent/provision.go` to accept `*VersionedSettings`. The function receives a `*VersionedSettings` and uses `ResolveHarnessConfig` instead of `ResolveHarness`.
-4. Update `pkg/agent/run.go` to use `*VersionedSettings` for image, user, tmux resolution.
-5. Update `cmd/create.go`, `cmd/start.go`, and other commands to call `LoadEffectiveSettings` and pass the result through.
-6. Introduce a `--harness-config` flag to `scion create` (in addition to existing `--harness`) to select a named harness config.
-7. Wire deprecation warnings to stderr output when legacy settings are detected.
-8. Test that existing settings files (legacy format) produce identical behavior.
+1. ✅ Add `ResolveHarnessConfig(profileName, harnessConfigName string) (HarnessConfigEntry, error)` to `VersionedSettings` — replaces `ResolveHarness` with support for named configs.
+2. ✅ Add `ResolveRuntime(profileName string) (V1RuntimeConfig, string, error)` to `VersionedSettings` — same semantics, now uses `type` field for runtime type resolution with map key fallback.
+3. ✅ Update `pkg/agent/provision.go` — `ProvisionAgent` and `GetAgent` use `LoadEffectiveSettings` and `ResolveHarnessConfig`.
+4. ✅ Update `pkg/agent/run.go` — `Start` uses `LoadEffectiveSettings` and `ResolveHarnessConfig` for image, user, tmux resolution.
+5. ✅ Update `pkg/runtime/factory.go` — `GetRuntime` uses `LoadEffectiveSettings` and `vs.ResolveRuntime`.
+6. ✅ Introduce `--harness-config` flag to `scion create` and `scion start` commands, with `HarnessConfig` field in `api.ScionConfig` and `api.StartOptions`.
+7. ✅ Wire deprecation warnings to stderr via `PrintDeprecationWarnings` helper.
+8. ✅ Test that existing settings files (legacy format) produce identical behavior via `TestLegacyAndVersionedResolution_SameResult`.
+9. ✅ Hub helper methods (`GetHubEndpoint`, `IsHubConfigured`, `IsHubEnabled`, `IsHubExplicitlyDisabled`, `IsHubLocalOnly`) added to `VersionedSettings` for parity with legacy `Settings`.
+
+**Implementation notes:**
+- Consumer migration is scoped to the local agent path. Hub/broker commands and `hubsync.HubContext` continue using legacy `Settings` (deferred to Phase 4).
+- Harness config name resolution priority: CLI `--harness-config` flag > `ScionConfig.HarnessConfig` (from template) > `ScionConfig.Harness` (legacy fallback).
+- `ResolveRuntime` returns `(V1RuntimeConfig, runtimeType, error)` — the `runtimeType` is the `Type` field when set, otherwise the map key name.
+- `MergeScionConfig` updated to propagate the new `HarnessConfig` field.
+- 17 new tests in `settings_v1_test.go` covering resolution methods, hub helpers, and legacy/versioned compatibility.
 
 ### Phase 4: Server Config Consolidation
 
