@@ -393,6 +393,20 @@ func runServerStart(cmd *cobra.Command, args []string) error {
 	var mgr agent.Manager
 	var colocatedBrokerRegistered bool
 
+	// Load settings early so both Hub and Broker can use grove-level hub.endpoint.
+	// This resolves the grove settings hierarchy (global → project → env vars).
+	{
+		var err error
+		brokerSettings, err = config.LoadSettings("")
+		if err != nil {
+			log.Printf("Warning: failed to load settings: %v", err)
+			brokerSettings = &config.Settings{}
+		}
+		if brokerSettings.Hub == nil {
+			brokerSettings.Hub = &config.HubClientConfig{}
+		}
+	}
+
 	// Initialize dev auth if enabled
 	var devAuthToken string
 	if cfg.Auth.Enabled {
@@ -437,6 +451,16 @@ func runServerStart(cmd *cobra.Command, args []string) error {
 			log.Printf("Admin emails configured: %v", adminEmailList)
 		}
 
+		// Resolve the Hub's public endpoint URL.
+		// Priority: server config (hub.endpoint / public_url) > grove settings (hub.endpoint)
+		hubEndpoint := cfg.Hub.Endpoint
+		if hubEndpoint == "" {
+			hubEndpoint = brokerSettings.GetHubEndpoint()
+			if hubEndpoint != "" && enableDebug {
+				log.Printf("Hub endpoint resolved from grove settings: %s", hubEndpoint)
+			}
+		}
+
 		// Create Hub server configuration
 		hubCfg := hub.ServerConfig{
 			Port:               cfg.Hub.Port,
@@ -452,7 +476,7 @@ func runServerStart(cmd *cobra.Command, args []string) error {
 			Debug:              enableDebug,
 			AuthorizedDomains:  cfg.Auth.AuthorizedDomains,
 			AdminEmails:        adminEmailList,
-			HubEndpoint:        cfg.Hub.Endpoint,
+			HubEndpoint:        hubEndpoint,
 			BrokerAuthConfig:     hub.DefaultBrokerAuthConfig(), // Enable broker HMAC authentication
 			OAuthConfig: hub.OAuthConfig{
 				Web: hub.OAuthClientConfig{
@@ -565,20 +589,9 @@ func runServerStart(cmd *cobra.Command, args []string) error {
 		// Create agent manager
 		mgr = agent.NewManager(rt)
 
-		// Load settings to get/persist runtime broker identity.
-		// The brokerID should be durable across server restarts, so we store it in settings.
-		var err error
-		brokerSettings, err = config.LoadSettings("")
-		if err != nil {
-			log.Printf("Warning: failed to load settings: %v", err)
-			brokerSettings = &config.Settings{}
-		}
+		// Settings were already loaded above for hub endpoint resolution.
+		// Reuse them here for broker identity and configuration.
 		settings := brokerSettings
-
-		// Ensure hub config exists in settings
-		if settings.Hub == nil {
-			settings.Hub = &config.HubClientConfig{}
-		}
 
 		// Try loading versioned settings to get broker identity from server.broker
 		versionedSettings, _, vsErr := config.LoadEffectiveSettings("")
