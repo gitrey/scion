@@ -250,22 +250,60 @@ start_server() {
 }
 
 # Create test template files
+# Uses the harness-agnostic template format from agnostic-template-design.md:
+#   - No harness field in scion-agent.yaml
+#   - Portable agent instructions (agents.md) and system prompt (system-prompt.md)
+#   - Optional harness-configs/ directory for template-specific overrides
+#   - Portable home/ directory (no harness-specific files)
 create_test_template() {
     log_section "Creating Test Template Files"
 
     local template_dir="$TEST_DIR/templates/test-integration"
-    mkdir -p "$template_dir/home/.claude"
+    mkdir -p "$template_dir/home/.config/lint-rules"
+    mkdir -p "$template_dir/harness-configs/claude"
 
+    # Harness-agnostic scion-agent.yaml (no harness field)
     cat > "$template_dir/scion-agent.yaml" << 'EOF'
-harness: claude
-image: scion-claude:latest
-detached: true
-config:
-  model: sonnet
-  commandArgs:
-    - "--no-update-check"
+schema_version: "1"
+name: test-integration
+description: "Integration test template for verifying the hosted template system"
+agent_instructions: agents.md
+system_prompt: system-prompt.md
+default_harness_config: claude
+
+env:
+  TEST_MODE: "true"
+
+max_turns: 50
+max_duration: "1h"
 EOF
 
+    # Portable agent instructions
+    cat > "$template_dir/agents.md" << 'EOF'
+# Integration Test Agent Instructions
+
+This agent is configured for integration testing of the Scion template system.
+
+## Workflow
+- Run assigned test tasks
+- Report results via sciontool hooks
+- Follow standard code review practices
+
+## Tools
+- Use available shell tools for file inspection
+- Report status updates regularly
+EOF
+
+    # Portable system prompt
+    cat > "$template_dir/system-prompt.md" << 'EOF'
+# Integration Test Agent
+
+You are a test agent created by the Scion template integration test suite.
+Your purpose is to verify that the template system correctly provisions agents
+with the appropriate configuration, instructions, and environment.
+EOF
+
+    # Portable home directory content (non-harness-specific)
     cat > "$template_dir/home/.bashrc" << 'EOF'
 # Custom bashrc for integration test template
 export PS1="[\u@scion \W]\$ "
@@ -278,17 +316,18 @@ if [ -f ~/.bashrc.local ]; then
 fi
 EOF
 
-    cat > "$template_dir/home/.claude/CLAUDE.md" << 'EOF'
-# Integration Test Template
+    # Example portable config file in home/
+    cat > "$template_dir/home/.config/lint-rules/rules.yaml" << 'EOF'
+# Example portable config file
+rules:
+  - name: no-console
+    severity: warning
+EOF
 
-This template was created by the integration test script.
-
-## Instructions
-- This is a test template for verifying the hosted template system
-- Created: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
-
-## Testing
-Run the integration tests to verify template functionality.
+    # Optional: template-specific harness-config override for claude
+    cat > "$template_dir/harness-configs/claude/config.yaml" << 'EOF'
+# Template-specific harness-config override for claude
+model: sonnet
 EOF
 
     log_success "Test template created at $template_dir"
@@ -321,9 +360,9 @@ test_phase1_hub_api() {
         -H "Content-Type: application/json" \
         -d '{
             "name": "phase1-test-template",
-            "harness": "claude",
             "scope": "global",
-            "description": "Phase 1 integration test template"
+            "description": "Phase 1 integration test template",
+            "default_harness_config": "claude"
         }')
 
     local template_id=$(echo "$create_response" | jq -r '.template.id // empty')
@@ -395,13 +434,16 @@ test_phase2_upload_flow() {
         -H "Content-Type: application/json" \
         -d '{
             "name": "phase2-upload-test",
-            "harness": "claude",
             "scope": "global",
             "description": "Phase 2 upload flow test",
+            "default_harness_config": "claude",
             "files": [
-                {"path": "scion-agent.yaml", "size": 200},
+                {"path": "scion-agent.yaml", "size": 300},
+                {"path": "agents.md", "size": 400},
+                {"path": "system-prompt.md", "size": 300},
                 {"path": "home/.bashrc", "size": 300},
-                {"path": "home/.claude/CLAUDE.md", "size": 500}
+                {"path": "home/.config/lint-rules/rules.yaml", "size": 100},
+                {"path": "harness-configs/claude/config.yaml", "size": 100}
             ]
         }')
 
@@ -449,10 +491,13 @@ test_phase2_upload_flow() {
     # Test 2.3: Finalize template
     log_info "Test 2.3: Finalizing template..."
 
-    # Compute file hashes (simplified for test)
+    # Compute file hashes for all template files
     local yaml_hash=$(sha256sum "$template_dir/scion-agent.yaml" | cut -d' ' -f1)
+    local agents_hash=$(sha256sum "$template_dir/agents.md" | cut -d' ' -f1)
+    local prompt_hash=$(sha256sum "$template_dir/system-prompt.md" | cut -d' ' -f1)
     local bashrc_hash=$(sha256sum "$template_dir/home/.bashrc" | cut -d' ' -f1)
-    local claude_hash=$(sha256sum "$template_dir/home/.claude/CLAUDE.md" | cut -d' ' -f1)
+    local lint_hash=$(sha256sum "$template_dir/home/.config/lint-rules/rules.yaml" | cut -d' ' -f1)
+    local hconfig_hash=$(sha256sum "$template_dir/harness-configs/claude/config.yaml" | cut -d' ' -f1)
 
     local finalize_response=$(curl -s -X POST "$base_url/api/v1/templates/$template_id/finalize" \
         -H "$AUTH" \
@@ -462,8 +507,11 @@ test_phase2_upload_flow() {
                 \"version\": \"1.0\",
                 \"files\": [
                     {\"path\": \"scion-agent.yaml\", \"hash\": \"sha256:$yaml_hash\", \"size\": $(stat -c%s "$template_dir/scion-agent.yaml"), \"mode\": \"0644\"},
+                    {\"path\": \"agents.md\", \"hash\": \"sha256:$agents_hash\", \"size\": $(stat -c%s "$template_dir/agents.md"), \"mode\": \"0644\"},
+                    {\"path\": \"system-prompt.md\", \"hash\": \"sha256:$prompt_hash\", \"size\": $(stat -c%s "$template_dir/system-prompt.md"), \"mode\": \"0644\"},
                     {\"path\": \"home/.bashrc\", \"hash\": \"sha256:$bashrc_hash\", \"size\": $(stat -c%s "$template_dir/home/.bashrc"), \"mode\": \"0644\"},
-                    {\"path\": \"home/.claude/CLAUDE.md\", \"hash\": \"sha256:$claude_hash\", \"size\": $(stat -c%s "$template_dir/home/.claude/CLAUDE.md"), \"mode\": \"0644\"}
+                    {\"path\": \"home/.config/lint-rules/rules.yaml\", \"hash\": \"sha256:$lint_hash\", \"size\": $(stat -c%s "$template_dir/home/.config/lint-rules/rules.yaml"), \"mode\": \"0644\"},
+                    {\"path\": \"harness-configs/claude/config.yaml\", \"hash\": \"sha256:$hconfig_hash\", \"size\": $(stat -c%s "$template_dir/harness-configs/claude/config.yaml"), \"mode\": \"0644\"}
                 ]
             }
         }")
@@ -546,6 +594,7 @@ test_phase3_runtime_integration() {
     log_success "Runtime Host type: $host_type"
 
     # Test 3.2: Create agent with template (triggers hydration)
+    # In the agnostic model, harness-config is specified separately from template
     log_info "Test 3.2: Creating agent with template (triggers hydration)..."
     local agent_response=$(curl -s -X POST "$runtime_url/api/v1/agents" \
         -H "Content-Type: application/json" \
@@ -554,7 +603,8 @@ test_phase3_runtime_integration() {
             \"config\": {
                 \"template\": \"phase2-upload-test\",
                 \"templateId\": \"$template_id\",
-                \"templateHash\": \"$content_hash\"
+                \"templateHash\": \"$content_hash\",
+                \"harnessConfig\": \"claude\"
             }
         }")
 
@@ -645,23 +695,126 @@ test_cli_commands() {
     # Enable Hub for the test grove
     export SCION_HUB_ENDPOINT="http://localhost:$HUB_PORT"
 
-    # Test: template sync
-    log_info "Test: scion template sync..."
+    # Test CLI.1: template sync (no --harness flag; template is harness-agnostic)
+    log_info "Test CLI.1: scion template sync..."
     if $TEST_DIR/scion template sync cli-test-template \
         --from "$template_dir" \
-        --harness claude \
         --scope global 2>&1; then
         log_success "template sync command succeeded"
     else
         log_warning "template sync may have issues (Hub mode not fully configured for CLI)"
     fi
 
-    # Test: template list
-    log_info "Test: scion template list..."
+    # Test CLI.2: template list
+    log_info "Test CLI.2: scion template list..."
     if $TEST_DIR/scion template list 2>&1; then
         log_success "template list command succeeded"
     else
         log_warning "template list may have issues"
+    fi
+
+    # Test CLI.3: Modify template and push changes
+    log_info "Test CLI.3: scion template push (after modification)..."
+    echo "" >> "$template_dir/agents.md"
+    echo "## Updated" >> "$template_dir/agents.md"
+    echo "- Added by integration test push verification" >> "$template_dir/agents.md"
+
+    if $TEST_DIR/scion template push cli-test-template \
+        --from "$template_dir" 2>&1; then
+        log_success "template push command succeeded"
+    else
+        log_warning "template push may have issues"
+    fi
+
+    # Test CLI.4: Pull template to a new location
+    log_info "Test CLI.4: scion template pull..."
+    local pull_dir="$TEST_DIR/pulled-template"
+    rm -rf "$pull_dir"
+
+    if $TEST_DIR/scion template pull cli-test-template \
+        --to "$pull_dir" 2>&1; then
+        log_success "template pull command succeeded"
+    else
+        log_warning "template pull may have issues"
+    fi
+
+    # Test CLI.5: Verify pulled content matches (round-trip integrity)
+    log_info "Test CLI.5: Verifying round-trip file integrity..."
+    if [[ -d "$pull_dir" ]]; then
+        local compare_success=true
+
+        # Verify scion-agent.yaml
+        if [[ -f "$pull_dir/scion-agent.yaml" ]]; then
+            if diff "$template_dir/scion-agent.yaml" "$pull_dir/scion-agent.yaml" > /dev/null 2>&1; then
+                log_success "  scion-agent.yaml matches"
+            else
+                log_error "  scion-agent.yaml MISMATCH"
+                compare_success=false
+            fi
+        else
+            log_error "  scion-agent.yaml not found in pulled template"
+            compare_success=false
+        fi
+
+        # Verify agents.md (should include the pushed modifications)
+        if [[ -f "$pull_dir/agents.md" ]]; then
+            if diff "$template_dir/agents.md" "$pull_dir/agents.md" > /dev/null 2>&1; then
+                log_success "  agents.md matches (includes pushed changes)"
+            else
+                log_error "  agents.md MISMATCH"
+                compare_success=false
+            fi
+        else
+            log_error "  agents.md not found in pulled template"
+            compare_success=false
+        fi
+
+        # Verify system-prompt.md
+        if [[ -f "$pull_dir/system-prompt.md" ]]; then
+            if diff "$template_dir/system-prompt.md" "$pull_dir/system-prompt.md" > /dev/null 2>&1; then
+                log_success "  system-prompt.md matches"
+            else
+                log_error "  system-prompt.md MISMATCH"
+                compare_success=false
+            fi
+        else
+            log_error "  system-prompt.md not found in pulled template"
+            compare_success=false
+        fi
+
+        # Verify home/.bashrc
+        if [[ -f "$pull_dir/home/.bashrc" ]]; then
+            if diff "$template_dir/home/.bashrc" "$pull_dir/home/.bashrc" > /dev/null 2>&1; then
+                log_success "  home/.bashrc matches"
+            else
+                log_error "  home/.bashrc MISMATCH"
+                compare_success=false
+            fi
+        else
+            log_error "  home/.bashrc not found in pulled template"
+            compare_success=false
+        fi
+
+        # Verify harness-configs override
+        if [[ -f "$pull_dir/harness-configs/claude/config.yaml" ]]; then
+            if diff "$template_dir/harness-configs/claude/config.yaml" "$pull_dir/harness-configs/claude/config.yaml" > /dev/null 2>&1; then
+                log_success "  harness-configs/claude/config.yaml matches"
+            else
+                log_error "  harness-configs/claude/config.yaml MISMATCH"
+                compare_success=false
+            fi
+        else
+            log_error "  harness-configs/claude/config.yaml not found in pulled template"
+            compare_success=false
+        fi
+
+        if [[ "$compare_success" == "true" ]]; then
+            log_success "Round-trip integrity verified"
+        else
+            log_error "Round-trip integrity check had mismatches"
+        fi
+    else
+        log_warning "Pull directory not found - skipping comparison"
     fi
 
     log_success "CLI commands test completed"
@@ -706,6 +859,14 @@ run_all_tests() {
         log_success "Phase 3: PASSED"
     else
         log_error "Phase 3: FAILED"
+        failed_tests=$((failed_tests + 1))
+    fi
+
+    # Run CLI commands tests (sync, list, push, pull, round-trip)
+    if test_cli_commands; then
+        log_success "CLI Commands: PASSED"
+    else
+        log_error "CLI Commands: FAILED"
         failed_tests=$((failed_tests + 1))
     fi
 
