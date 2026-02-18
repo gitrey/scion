@@ -21,6 +21,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 // CopyDir recursively copies a directory tree, attempting to preserve permissions.
@@ -251,7 +253,7 @@ func removeSymlinkSafe(path string) {
 	// the directory entry via the fd, without resolving the symlink target.
 	dirFD, err := syscall.Open(dir, syscall.O_RDONLY, 0)
 	if err == nil {
-		err = syscall.Unlinkat(dirFD, name)
+		err = unix.Unlinkat(dirFD, name, 0)
 		syscall.Close(dirFD)
 		if err == nil {
 			elapsed := time.Since(start)
