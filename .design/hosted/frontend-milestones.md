@@ -18,16 +18,17 @@ For architectural details and component specifications, see **`web-frontend-desi
 | M4 | Complete | Authentication Flow |
 | M5 | In Progress | Hub API Proxy |
 | M6 | Complete | Grove & Agent Pages |
-| M7 | Not Started | SSE + NATS Real-Time Updates |
-| M8 | Not Started | Terminal Component |
-| M9 | Not Started | Agent Creation Workflow |
-| M10 | Not Started | Template Management UI |
-| M11 | Not Started | User & Group Management UI |
-| M12 | Not Started | Permissions & Policy Management UI |
-| M13 | Not Started | Environment Variables & Secrets UI |
-| M14 | Not Started | API Key Management UI |
-| M15 | Not Started | Production Hardening |
-| M16 | Not Started | Cloud Run Deployment |
+| M7 | Not Started | SSE + NATS Server Infrastructure |
+| M8 | Not Started | Client Real-Time State Management |
+| M9 | Not Started | Terminal Component |
+| M10 | Not Started | Agent Creation Workflow |
+| M11 | Not Started | Template Management UI |
+| M12 | Not Started | User & Group Management UI |
+| M13 | Not Started | Permissions & Policy Management UI |
+| M14 | Not Started | Environment Variables & Secrets UI |
+| M15 | Not Started | API Key Management UI |
+| M16 | Not Started | Production Hardening |
+| M17 | Not Started | Cloud Run Deployment |
 
 **Status Legend:** Not Started | In Progress | Complete
 
@@ -320,13 +321,13 @@ Create a simple mock for development without a real Hub:
 - [x] **Action handlers**
    - [x] Start/stop agent buttons (wired to API)
    - [x] Delete agent with confirmation
-   - [ ] Create agent dialog (basic) - deferred to M9
+   - [ ] Create agent dialog (basic) - deferred to M10
 
-- [ ] **State management (client)**
+- [x] **State management (client) — basic**
    - [x] Basic client-side state in components
-   - [ ] State manager class
-   - [ ] Hydration from SSR data
-   - [ ] Optimistic updates
+   - [ ] State manager class — deferred to M8 (requires SSE infrastructure)
+   - [ ] Hydration from SSR data — deferred to M8
+   - [ ] Optimistic updates — deferred to M8
 
 ### Test Criteria
 
@@ -360,56 +361,62 @@ Create a simple mock for development without a real Hub:
 - **Status Badges**: Uses Shoelace badge variants mapped from API status strings
 - **Action Handlers**: Start/Stop/Delete wired to Hub API via POST/DELETE requests with loading states
 - **Routing**: SSR renderer handles `/groves/:groveId` and `/agents/:agentId` routes
-- **Remaining Work**: State manager class, SSR data hydration, optimistic updates, agent creation dialog (M9)
+- **Deferred Work**: State manager class, SSR data hydration, and optimistic updates moved to M8 (Client Real-Time State Management). Agent creation dialog deferred to M10.
 
 ---
 
-## Milestone 7: SSE + NATS Real-Time Updates
+## Milestone 7: SSE + NATS Server Infrastructure
 
-**Goal:** Implement the Snapshot + Delta pattern with SSE and NATS for real-time updates.
+**Goal:** Implement the server-side infrastructure for real-time updates: NATS client, SSE Manager, and the `/events` endpoint with query-parameter-based subscriptions (WatchRequest pattern). See `web-frontend-design.md` §12 for the full architectural rationale.
+
+This milestone is **server-side only**. The client SSE handler and state management follow in M8.
+
+### Design Context
+
+State updates use SSE (not WebSocket) because the data flow is server-to-client unidirectional. SSE maps directly to a future gRPC server-streaming RPC (`WatchRequest`/`WatchEvent`). WebSocket is reserved for terminal PTY binary data only (M9). See `web-frontend-design.md` §12.1 for the transport design rationale.
 
 ### Deliverables
 
 - [ ] **NATS client**
-   - Connection management with reconnection
-   - Subject subscription/unsubscription
-   - Message deserialization
+   - Connection management with automatic reconnection
+   - Subject subscription with wildcard support (`>`, `*`)
+   - Message deserialization (JSON payloads)
+   - Graceful drain on shutdown
 
-- [ ] **SSE endpoint**
-   - `GET /events` - SSE stream
-   - `POST /events/subscribe` - subscribe to subjects
-   - Connection tracking per user
-   - Heartbeat messages
-
-- [ ] **SSE manager**
-   - Connection lifecycle management
+- [ ] **SSE Manager**
+   - Connection-scoped subscriptions (declared at creation, immutable for lifetime)
    - NATS-to-SSE message bridging
-   - Subject-based routing
-   - Permission filtering
+   - Sequential event ID tracking for resume support
+   - Heartbeat messages (30s interval)
+   - Connection cleanup on client disconnect
 
-- [ ] **Client SSE handler**
-   - EventSource connection
-   - Reconnection with backoff
-   - Message parsing and dispatch
+- [ ] **SSE endpoint (`GET /events?sub=...`)**
+   - Query-parameter-based subject declaration (WatchRequest pattern)
+   - Multiple `sub` params supported: `?sub=grove.abc.>&sub=agent.xyz.>`
+   - Permission validation per subject (`canSubscribe`)
+   - `Last-Event-ID` header support for reconnection resume
+   - SSE response headers (`Content-Type`, `Cache-Control`, `X-Accel-Buffering`)
+   - 400 for missing subjects, 403 for unauthorized subjects
 
-- [ ] **Reactive component updates**
-   - State manager integration with SSE
-   - Delta merging into local state
-   - Lit reactive property updates
+- [ ] **Subject permission model**
+   - `grove.*.summary` allowed for all authenticated users
+   - `grove.{groveId}.>` requires grove access
+   - `agent.{agentId}.>` requires agent access
+   - Reject overly broad wildcard patterns
 
 ### Test Criteria
 
 | Test | Method | Expected Result |
 |------|--------|-----------------|
-| SSE connects | Browser Network tab | EventSource connection open |
-| Heartbeat | Wait 30s | Heartbeat event received |
-| Subscribe | Call subscribe API | Subscription confirmed |
-| Agent status update | Change agent status in Hub | UI updates without refresh |
-| Agent created | Create agent via CLI | New agent appears in list |
-| Agent deleted | Delete agent via CLI | Agent removed from list |
-| Reconnection | Kill NATS, restart | SSE reconnects automatically |
-| Multiple tabs | Open same page in 2 tabs | Both receive updates |
-| Permission check | Subscribe to unauthorized grove | Subscription rejected |
+| SSE connects | `curl -N "/events?sub=grove.abc.>"` | SSE stream opens, `connected` event received |
+| Missing subjects | `curl "/events"` (no `sub` param) | 400 error |
+| Unauthorized subject | Subscribe to grove user lacks access to | 403 error |
+| NATS → SSE flow | `nats pub grove.abc.agent.status '...'` | Event appears in SSE stream |
+| Heartbeat | Hold SSE connection open 30s+ | Heartbeat event received |
+| Reconnect resume | Reconnect with `Last-Event-ID` header | Events resume from last ID |
+| Multiple subjects | `curl "/events?sub=grove.abc.>&sub=agent.xyz.>"` | Events from both subject trees received |
+| Connection cleanup | Close SSE client | NATS subscriptions removed (server logs) |
+| NATS reconnection | Kill NATS, restart | Server reconnects, SSE continues |
 
 ### NATS Testing
 
@@ -417,13 +424,99 @@ Create a simple mock for development without a real Hub:
 # Start NATS for local development
 docker run -p 4222:4222 nats:latest
 
-# Publish test message
-nats pub agent.test123.status '{"status":"running"}'
+# Test SSE endpoint (authenticated session required)
+curl -N -H "Cookie: scion_sess=..." \
+  "http://localhost:8080/events?sub=grove.test.>"
+
+# Publish test messages (in another terminal)
+# Lightweight event (grove-scoped, received by grove subscribers)
+nats pub grove.test.agent.status \
+  '{"agentId":"agent1","status":"running","sessionStatus":"idle"}'
+
+# Medium event (grove-scoped)
+nats pub grove.test.agent.created \
+  '{"agentId":"agent2","name":"new-agent","template":"claude","status":"provisioning"}'
+
+# Heavy event (agent-scoped only, NOT received by grove subscribers)
+nats pub agent.agent1.event \
+  '{"type":"tool_use","data":"heavy harness output payload..."}'
 ```
+
+### Key Technical Notes
+
+- **No `POST /subscribe` endpoint.** Subscriptions are declared via query parameters at connection time and are immutable. To change subscriptions, the client closes the connection and opens a new one. This keeps the server stateless per-connection and maps directly to a future gRPC `WatchRequest`.
+- **Event weight classes** are enforced on the Hub publishing side. The SSE endpoint does not filter by weight — the subject hierarchy itself controls which events reach which subscribers. Grove-scoped subjects only carry lightweight/medium events; heavy events are only on agent-scoped subjects (see `web-frontend-design.md` §12.2).
 
 ---
 
-## Milestone 8: Terminal Component
+## Milestone 8: Client Real-Time State Management
+
+**Goal:** Implement the client-side SSE handler, view-scoped state management, and wire existing pages to receive real-time updates. This completes the deferred state management items from M6.
+
+### Design Context
+
+The StateManager uses **view-scoped subscriptions**: the subscription scope follows navigation, not individual entities. A paginated list of 200 agents uses one grove-level subscription, not 200 agent-level subscriptions. Pagination is a rendering concern; the full state map is maintained in memory. See `web-frontend-design.md` §12.2 for the subscription model and §4.4 for the StateManager design.
+
+### Deliverables
+
+- [ ] **SSE Client class**
+   - `connect(subjects: string[])` — builds URL with query params, opens `EventSource`
+   - Automatic reconnection with exponential backoff
+   - `EventSource` `Last-Event-ID` resume on reconnect
+   - `disconnect()` for clean teardown
+
+- [ ] **StateManager with view scoping**
+   - `ViewScope` type: `dashboard`, `grove`, `agent-detail`
+   - `setScope(scope)` — maps scope to NATS subjects, closes/reopens SSE connection
+   - Full in-memory state map (agents, groves) maintained regardless of pagination
+   - Delta merging for `update` events (status, created, deleted)
+   - Event dispatch for component reactivity (`agents-updated`, `groves-updated`)
+
+- [ ] **View-scoped subscription lifecycle**
+   - `setScope()` called on navigation events via router integration
+   - Subscription transitions:
+     - `/groves` → `sub=grove.*.summary`
+     - `/groves/:id` → `sub=grove.{id}.>`
+     - `/agents/:id` → `sub=grove.{groveId}.>&sub=agent.{id}.>`
+   - SSE connection closed and reopened on each navigation (not mutated in-band)
+   - Clean disconnect on page unload
+
+- [ ] **Hydration from SSR data** (deferred from M6)
+   - Parse `__SCION_DATA__` script tag into StateManager on page load
+   - SSE connection opened after hydration (deltas applied on top of snapshot)
+
+- [ ] **Component wiring**
+   - Grove list page receives live grove summary updates
+   - Agent list page receives live agent status updates within grove
+   - Agent detail page receives full event stream
+   - Status badges update in real-time without page refresh
+   - Agent created/deleted events add/remove items from lists
+
+### Test Criteria
+
+| Test | Method | Expected Result |
+|------|--------|-----------------|
+| SSE connects on load | Browser Network tab | EventSource connection to `/events?sub=...` |
+| Subjects match view | Navigate to grove detail | `sub=grove.{id}.>` in SSE URL |
+| Sub change on nav | Navigate grove → agent detail | Old SSE closes, new SSE opens with agent subject added |
+| Agent status update | Change agent status via CLI/API | Status badge updates without refresh |
+| Agent created | Create agent via CLI | Agent appears in grove's agent list |
+| Agent deleted | Delete agent via CLI | Agent removed from list |
+| Reconnection | Kill/restart server briefly | SSE reconnects, state consistent |
+| Multiple tabs | Open same grove in 2 tabs | Both tabs receive updates |
+| Hydration | View source, then interact | SSR data loaded into state, SSE deltas applied on top |
+| Pagination unaffected | Page through agent list | All agents maintain live state, no subscription churn |
+| No entity-level subs | Open agent list with 50 agents | Single grove-level SSE connection, not 50 |
+
+### Key Technical Notes
+
+- **Optimistic updates** (immediate UI feedback on action before SSE confirms) are not required for initial M8 delivery. They can be added incrementally once the SSE pipeline is proven stable.
+- **The StateManager is a singleton**, accessed via import. Components do not instantiate their own state managers.
+- **Pagination does not affect subscriptions.** The grove-level subscription covers all agents in the grove. The component renders the current page slice from the full state map.
+
+---
+
+## Milestone 9: Terminal Component
 
 **Goal:** Implement the xterm.js-based terminal for PTY access to agents.
 
@@ -474,7 +567,7 @@ Browser WS → Koa WS Proxy → Hub API WS → Runtime Broker
 
 ---
 
-## Milestone 9: Agent Creation Workflow
+## Milestone 10: Agent Creation Workflow
 
 **Goal:** Implement the full agent creation flow with template selection and configuration.
 
@@ -517,7 +610,7 @@ Browser WS → Koa WS Proxy → Hub API WS → Runtime Broker
 
 ---
 
-## Milestone 10: Template Management UI
+## Milestone 11: Template Management UI
 
 **Goal:** Implement the template browser, viewer, and upload functionality for managing agent templates.
 
@@ -576,7 +669,7 @@ Browser WS → Koa WS Proxy → Hub API WS → Runtime Broker
 
 ---
 
-## Milestone 11: User & Group Management UI
+## Milestone 12: User & Group Management UI
 
 **Goal:** Implement user listing, group management, and membership functionality.
 
@@ -641,7 +734,7 @@ Browser WS → Koa WS Proxy → Hub API WS → Runtime Broker
 
 ---
 
-## Milestone 12: Permissions & Policy Management UI
+## Milestone 13: Permissions & Policy Management UI
 
 **Goal:** Implement policy creation, editing, and access evaluation debugging tools.
 
@@ -700,7 +793,7 @@ Browser WS → Koa WS Proxy → Hub API WS → Runtime Broker
 
 ---
 
-## Milestone 13: Environment Variables & Secrets UI
+## Milestone 14: Environment Variables & Secrets UI
 
 **Goal:** Implement scoped environment variable and secret management.
 
@@ -761,7 +854,7 @@ Browser WS → Koa WS Proxy → Hub API WS → Runtime Broker
 
 ---
 
-## Milestone 14: API Key Management UI
+## Milestone 15: API Key Management UI
 
 **Goal:** Implement API key creation, listing, and revocation.
 
@@ -808,7 +901,7 @@ Browser WS → Koa WS Proxy → Hub API WS → Runtime Broker
 
 ---
 
-## Milestone 15: Production Hardening
+## Milestone 16: Production Hardening
 
 **Goal:** Prepare for production deployment with security, performance, and observability improvements.
 
@@ -855,7 +948,7 @@ Browser WS → Koa WS Proxy → Hub API WS → Runtime Broker
 
 ---
 
-## Milestone 16: Cloud Run Deployment
+## Milestone 17: Cloud Run Deployment
 
 **Goal:** Deploy the web frontend to Cloud Run with full CI/CD pipeline.
 
@@ -921,20 +1014,24 @@ gcloud run deploy scion-web \
 ## Milestone Dependencies
 
 ```
-M1 ──► M2 ──► M3 ──┬──► M4 ──► M5 ──► M6 ──┬──► M7 ──► M8
-                   │                        │
-                   │                        ├──► M9
-                   │                        │
-                   │                        ├──► M10 (Template Mgmt)
-                   │                        │
-                   │                        ├──► M11 (User/Group) ──► M12 (Permissions)
-                   │                        │
-                   │                        ├──► M13 (Env/Secrets)
-                   │                        │
-                   │                        └──► M14 (API Keys)
-                   │
-                   └──────────────────────────────────► M15 ──► M16
+M1 ──► M2 ──► M3 ──► M4 ──┬──► M5 ──► M6 ──┬──► M8 ──► M9
+                           │                 │
+                           └──► M7 ──────────┘
+                                             │
+                                             ├──► M10 (Agent Creation)
+                                             │
+                                             ├──► M11 (Template Mgmt)
+                                             │
+                                             ├──► M12 (User/Group) ──► M13 (Permissions)
+                                             │
+                                             ├──► M14 (Env/Secrets)
+                                             │
+                                             └──► M15 (API Keys)
+
+                                  M3+ ──────────────────► M16 ──► M17
 ```
+
+**Key parallelization opportunity:** M7 (NATS server infrastructure) depends only on M4 (auth), not on M5/M6. It can be developed in parallel with M5 and M6. M8 then merges both paths — it requires the pages from M6 and the SSE endpoint from M7.
 
 | Milestone | Depends On | Can Parallelize With |
 |-----------|------------|----------------------|
@@ -942,18 +1039,19 @@ M1 ──► M2 ──► M3 ──┬──► M4 ──► M5 ──► M6 ─
 | M2: Lit SSR | M1 | - |
 | M3: Web Awesome | M2 | - |
 | M4: Authentication | M3 | - |
-| M5: Hub API Proxy | M4 | - |
-| M6: Grove & Agent Pages | M5 | - |
-| M7: SSE + NATS | M6 | M9, M10-M14 |
-| M8: Terminal | M7 | - |
-| M9: Agent Creation | M6 | M7, M8, M10-M14 |
-| M10: Template Management | M6 | M7-M9, M11-M14 |
-| M11: User & Group Mgmt | M6 | M7-M10, M13-M14 |
-| M12: Permissions & Policy | M11 | M7-M10, M13-M14 |
-| M13: Env & Secrets | M6 | M7-M12, M14 |
-| M14: API Key Mgmt | M4 | M7-M13 |
-| M15: Production Hardening | M3+ | M7-M14 |
-| M16: Cloud Run Deployment | M15 | - |
+| M5: Hub API Proxy | M4 | M7 |
+| M6: Grove & Agent Pages | M5 | M7 |
+| M7: SSE + NATS Server | M4 | M5, M6 |
+| M8: Client State Mgmt | M6, M7 | M10-M15 |
+| M9: Terminal | M8 | M10-M15 |
+| M10: Agent Creation | M6 | M7-M9, M11-M15 |
+| M11: Template Management | M6 | M7-M10, M12-M15 |
+| M12: User & Group Mgmt | M6 | M7-M11, M14-M15 |
+| M13: Permissions & Policy | M12 | M7-M11, M14-M15 |
+| M14: Env & Secrets | M6 | M7-M13, M15 |
+| M15: API Key Mgmt | M4 | M7-M14 |
+| M16: Production Hardening | M3+ | M7-M15 |
+| M17: Cloud Run Deployment | M16 | - |
 
 ---
 
@@ -967,16 +1065,17 @@ M1 ──► M2 ──► M3 ──┬──► M4 ──► M5 ──► M6 ─
 | M4: Authentication | Medium | OAuth provider config |
 | M5: Hub API Proxy | Low | None |
 | M6: Grove & Agent Pages | Medium | UI/UX decisions |
-| M7: SSE + NATS | High | Connection management, race conditions |
-| M8: Terminal | Medium | xterm.js SSR compatibility |
-| M9: Agent Creation | Medium | Form complexity |
-| M10: Template Management | Medium | File upload UX, signed URL handling |
-| M11: User & Group Mgmt | Medium | Member list UX, nested groups |
-| M12: Permissions & Policy | High | Policy model complexity, evaluation logic |
-| M13: Env & Secrets | Low | Scope switching UX |
-| M14: API Key Mgmt | Low | Key display security |
-| M15: Production Hardening | Medium | Security review |
-| M16: Cloud Run Deployment | Medium | Infrastructure setup |
+| M7: SSE + NATS Server | Medium | NATS connection management, subject permission model |
+| M8: Client State Mgmt | Medium | View-scoped lifecycle, delta merging correctness |
+| M9: Terminal | Medium | xterm.js SSR compatibility |
+| M10: Agent Creation | Medium | Form complexity |
+| M11: Template Management | Medium | File upload UX, signed URL handling |
+| M12: User & Group Mgmt | Medium | Member list UX, nested groups |
+| M13: Permissions & Policy | High | Policy model complexity, evaluation logic |
+| M14: Env & Secrets | Low | Scope switching UX |
+| M15: API Key Mgmt | Low | Key display security |
+| M16: Production Hardening | Medium | Security review |
+| M17: Cloud Run Deployment | Medium | Infrastructure setup |
 
 ---
 
@@ -985,15 +1084,17 @@ M1 ──► M2 ──► M3 ──┬──► M4 ──► M5 ──► M6 ─
 ### Unit Tests
 - Component rendering tests (Lit)
 - Middleware tests (Koa)
-- Service tests (Hub client, NATS client)
+- Service tests (Hub client, NATS client, SSE Manager)
 
 ### Integration Tests
 - API proxy end-to-end
-- SSE subscription flow
+- SSE endpoint: NATS publish → SSE event received (M7)
+- View-scoped subscription lifecycle: navigation → SSE reconnection with correct subjects (M8)
 - OAuth flow with mock provider
 
 ### E2E Tests
 - Full user flows (login → create agent → terminal)
+- Real-time update flow (change agent status via API → verify UI updates without refresh)
 - Playwright or Cypress
 - Run against staging environment
 

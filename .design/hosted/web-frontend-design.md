@@ -3364,16 +3364,17 @@ See **`frontend-milestones.md`** for the detailed implementation plan with 16 mi
 | M4 | Authentication Flow |
 | M5 | Hub API Proxy |
 | M6 | Grove & Agent Pages |
-| M7 | SSE + NATS Real-Time Updates |
-| M8 | Terminal Component |
-| M9 | Agent Creation Workflow |
-| M10 | Template Management UI |
-| M11 | User & Group Management UI |
-| M12 | Permissions & Policy Management UI |
-| M13 | Environment Variables & Secrets UI |
-| M14 | API Key Management UI |
-| M15 | Production Hardening |
-| M16 | Cloud Run Deployment |
+| M7 | SSE + NATS Server Infrastructure |
+| M8 | Client Real-Time State Management |
+| M9 | Terminal Component |
+| M10 | Agent Creation Workflow |
+| M11 | Template Management UI |
+| M12 | User & Group Management UI |
+| M13 | Permissions & Policy Management UI |
+| M14 | Environment Variables & Secrets UI |
+| M15 | API Key Management UI |
+| M16 | Production Hardening |
+| M17 | Cloud Run Deployment |
 
 ---
 
