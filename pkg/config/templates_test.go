@@ -798,3 +798,208 @@ func TestMergeScionConfig_NewFields(t *testing.T) {
 		}
 	})
 }
+
+func boolP(b bool) *bool    { return &b }
+func float64P(f float64) *float64 { return &f }
+
+func TestMergeScionConfigTelemetry(t *testing.T) {
+	t.Run("override on nil base", func(t *testing.T) {
+		base := &api.ScionConfig{}
+		override := &api.ScionConfig{
+			Telemetry: &api.TelemetryConfig{
+				Enabled: boolP(false),
+				Cloud: &api.TelemetryCloudConfig{
+					Endpoint: "https://otel.example.com",
+				},
+			},
+		}
+		got := MergeScionConfig(base, override)
+		if got.Telemetry == nil {
+			t.Fatal("expected Telemetry to be set")
+		}
+		if got.Telemetry.Enabled == nil || *got.Telemetry.Enabled != false {
+			t.Errorf("expected Telemetry.Enabled=false, got %v", got.Telemetry.Enabled)
+		}
+		if got.Telemetry.Cloud == nil || got.Telemetry.Cloud.Endpoint != "https://otel.example.com" {
+			t.Errorf("expected Cloud.Endpoint, got %v", got.Telemetry.Cloud)
+		}
+	})
+
+	t.Run("nil override preserves base", func(t *testing.T) {
+		base := &api.ScionConfig{
+			Telemetry: &api.TelemetryConfig{
+				Enabled: boolP(true),
+				Cloud: &api.TelemetryCloudConfig{
+					Endpoint: "https://base.example.com",
+					Protocol: "grpc",
+				},
+			},
+		}
+		override := &api.ScionConfig{}
+		got := MergeScionConfig(base, override)
+		if got.Telemetry == nil {
+			t.Fatal("expected Telemetry to be preserved")
+		}
+		if got.Telemetry.Cloud == nil || got.Telemetry.Cloud.Endpoint != "https://base.example.com" {
+			t.Errorf("expected base endpoint preserved")
+		}
+	})
+
+	t.Run("partial override merges fields", func(t *testing.T) {
+		base := &api.ScionConfig{
+			Telemetry: &api.TelemetryConfig{
+				Enabled: boolP(true),
+				Cloud: &api.TelemetryCloudConfig{
+					Endpoint: "https://base.example.com",
+					Protocol: "grpc",
+					TLS: &api.TelemetryTLS{
+						Enabled:            boolP(true),
+						InsecureSkipVerify: boolP(false),
+					},
+					Batch: &api.TelemetryBatch{
+						MaxSize: 512,
+						Timeout: "5s",
+					},
+				},
+				Hub: &api.TelemetryHubConfig{
+					Enabled:        boolP(true),
+					ReportInterval: "30s",
+				},
+				Filter: &api.TelemetryFilterConfig{
+					Events: &api.TelemetryEventsConfig{
+						Exclude: []string{"agent.user.prompt"},
+					},
+					Attributes: &api.TelemetryAttributesConfig{
+						Redact: []string{"prompt"},
+						Hash:   []string{"session_id"},
+					},
+					Sampling: &api.TelemetrySamplingConfig{
+						Default: float64P(1.0),
+						Rates:   map[string]float64{"agent.tool.call": 0.5},
+					},
+				},
+				Resource: map[string]string{
+					"service.name": "base-agent",
+				},
+			},
+		}
+		override := &api.ScionConfig{
+			Telemetry: &api.TelemetryConfig{
+				Cloud: &api.TelemetryCloudConfig{
+					Endpoint: "https://override.example.com",
+					TLS: &api.TelemetryTLS{
+						InsecureSkipVerify: boolP(true),
+					},
+					Batch: &api.TelemetryBatch{
+						MaxSize: 256,
+					},
+				},
+				Hub: &api.TelemetryHubConfig{
+					Enabled: boolP(false),
+				},
+				Filter: &api.TelemetryFilterConfig{
+					Events: &api.TelemetryEventsConfig{
+						Exclude: []string{"agent.tool.output"},
+					},
+					Sampling: &api.TelemetrySamplingConfig{
+						Default: float64P(0.5),
+						Rates:   map[string]float64{"agent.cost": 0.1},
+					},
+				},
+				Resource: map[string]string{
+					"deployment.env": "production",
+				},
+			},
+		}
+
+		got := MergeScionConfig(base, override)
+		if got.Telemetry == nil {
+			t.Fatal("expected Telemetry")
+		}
+
+		// Enabled should come from base (not overridden)
+		if got.Telemetry.Enabled == nil || *got.Telemetry.Enabled != true {
+			t.Errorf("expected Enabled=true from base")
+		}
+
+		// Cloud endpoint overridden
+		if got.Telemetry.Cloud.Endpoint != "https://override.example.com" {
+			t.Errorf("expected overridden endpoint, got %s", got.Telemetry.Cloud.Endpoint)
+		}
+		// Cloud protocol preserved from base
+		if got.Telemetry.Cloud.Protocol != "grpc" {
+			t.Errorf("expected protocol preserved, got %s", got.Telemetry.Cloud.Protocol)
+		}
+		// TLS enabled preserved, insecure overridden
+		if got.Telemetry.Cloud.TLS.Enabled == nil || *got.Telemetry.Cloud.TLS.Enabled != true {
+			t.Errorf("expected TLS.Enabled=true preserved")
+		}
+		if got.Telemetry.Cloud.TLS.InsecureSkipVerify == nil || *got.Telemetry.Cloud.TLS.InsecureSkipVerify != true {
+			t.Errorf("expected InsecureSkipVerify=true overridden")
+		}
+		// Batch max_size overridden, timeout preserved
+		if got.Telemetry.Cloud.Batch.MaxSize != 256 {
+			t.Errorf("expected Batch.MaxSize=256, got %d", got.Telemetry.Cloud.Batch.MaxSize)
+		}
+		if got.Telemetry.Cloud.Batch.Timeout != "5s" {
+			t.Errorf("expected Batch.Timeout='5s' preserved, got %s", got.Telemetry.Cloud.Batch.Timeout)
+		}
+
+		// Hub enabled overridden, report_interval preserved
+		if got.Telemetry.Hub.Enabled == nil || *got.Telemetry.Hub.Enabled != false {
+			t.Errorf("expected Hub.Enabled=false overridden")
+		}
+		if got.Telemetry.Hub.ReportInterval != "30s" {
+			t.Errorf("expected Hub.ReportInterval='30s' preserved")
+		}
+
+		// Filter events overridden (last write wins for arrays)
+		if len(got.Telemetry.Filter.Events.Exclude) != 1 || got.Telemetry.Filter.Events.Exclude[0] != "agent.tool.output" {
+			t.Errorf("expected events.exclude overridden to [agent.tool.output], got %v", got.Telemetry.Filter.Events.Exclude)
+		}
+		// Filter attributes preserved (not overridden)
+		if len(got.Telemetry.Filter.Attributes.Redact) != 1 || got.Telemetry.Filter.Attributes.Redact[0] != "prompt" {
+			t.Errorf("expected attributes.redact preserved")
+		}
+		// Sampling default overridden
+		if got.Telemetry.Filter.Sampling.Default == nil || *got.Telemetry.Filter.Sampling.Default != 0.5 {
+			t.Errorf("expected sampling.default=0.5")
+		}
+		// Sampling rates merged (both keys present)
+		if got.Telemetry.Filter.Sampling.Rates["agent.tool.call"] != 0.5 {
+			t.Errorf("expected agent.tool.call rate preserved")
+		}
+		if got.Telemetry.Filter.Sampling.Rates["agent.cost"] != 0.1 {
+			t.Errorf("expected agent.cost rate added")
+		}
+
+		// Resource merged
+		if got.Telemetry.Resource["service.name"] != "base-agent" {
+			t.Errorf("expected service.name preserved")
+		}
+		if got.Telemetry.Resource["deployment.env"] != "production" {
+			t.Errorf("expected deployment.env added")
+		}
+	})
+}
+
+func TestValidateAgentConfig_Telemetry(t *testing.T) {
+	data := []byte(`
+schema_version: "1"
+telemetry:
+  enabled: false
+  cloud:
+    endpoint: "https://agent-otel.example.com"
+  filter:
+    events:
+      exclude:
+        - "agent.user.prompt"
+`)
+	errors, err := ValidateAgentConfig(data, "1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(errors) > 0 {
+		t.Errorf("expected no validation errors, got: %v", errors)
+	}
+}

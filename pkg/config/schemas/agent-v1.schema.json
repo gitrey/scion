@@ -85,6 +85,10 @@
         "auth_selected_type": { "type": "string" }
       }
     },
+    "telemetry": {
+      "$ref": "#/$defs/telemetryConfig",
+      "description": "Telemetry settings override for this template/agent. Merged on top of settings-level telemetry config."
+    },
     "kubernetes": {
       "type": "object",
       "description": "Kubernetes-specific configuration.",
@@ -168,6 +172,93 @@
           }
         }
       }
+    },
+    "telemetryConfig": {
+      "type": "object",
+      "description": "Telemetry and observability configuration override.",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "cloud": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "endpoint": { "type": "string" },
+            "protocol": { "type": "string", "enum": ["grpc", "http"] },
+            "headers": { "type": "object", "additionalProperties": { "type": "string" } },
+            "tls": {
+              "type": "object",
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "insecure_skip_verify": { "type": "boolean" }
+              },
+              "additionalProperties": false
+            },
+            "batch": {
+              "type": "object",
+              "properties": {
+                "max_size": { "type": "integer" },
+                "timeout": { "type": "string" }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        "hub": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "report_interval": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        "local": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "file": { "type": "string" },
+            "console": { "type": "boolean" }
+          },
+          "additionalProperties": false
+        },
+        "filter": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "respect_debug_mode": { "type": "boolean" },
+            "events": {
+              "type": "object",
+              "properties": {
+                "include": { "type": "array", "items": { "type": "string" } },
+                "exclude": { "type": "array", "items": { "type": "string" } }
+              },
+              "additionalProperties": false
+            },
+            "attributes": {
+              "type": "object",
+              "properties": {
+                "redact": { "type": "array", "items": { "type": "string" } },
+                "hash": { "type": "array", "items": { "type": "string" } }
+              },
+              "additionalProperties": false
+            },
+            "sampling": {
+              "type": "object",
+              "properties": {
+                "default": { "type": "number", "minimum": 0, "maximum": 1 },
+                "rates": { "type": "object", "additionalProperties": { "type": "number", "minimum": 0, "maximum": 1 } }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        "resource": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
     }
   }
 }

@@ -157,6 +157,7 @@ type VersionedSettings struct {
 	Server               *V1ServerConfig                 `json:"server,omitempty" yaml:"server,omitempty" koanf:"server"`
 	Hub             *V1HubClientConfig              `json:"hub,omitempty" yaml:"hub,omitempty" koanf:"hub"`
 	CLI             *V1CLIConfig                    `json:"cli,omitempty" yaml:"cli,omitempty" koanf:"cli"`
+	Telemetry       *V1TelemetryConfig              `json:"telemetry,omitempty" yaml:"telemetry,omitempty" koanf:"telemetry"`
 	Runtimes        map[string]V1RuntimeConfig      `json:"runtimes,omitempty" yaml:"runtimes,omitempty" koanf:"runtimes"`
 	HarnessConfigs  map[string]HarnessConfigEntry   `json:"harness_configs,omitempty" yaml:"harness_configs,omitempty" koanf:"harness_configs"`
 	Profiles        map[string]V1ProfileConfig      `json:"profiles,omitempty" yaml:"profiles,omitempty" koanf:"profiles"`
@@ -275,6 +276,80 @@ type V1HubClientConfig struct {
 type V1CLIConfig struct {
 	AutoHelp            *bool `json:"autohelp,omitempty" yaml:"autohelp,omitempty" koanf:"autohelp"`
 	InteractiveDisabled *bool `json:"interactive_disabled,omitempty" yaml:"interactive_disabled,omitempty" koanf:"interactive_disabled"`
+}
+
+// V1TelemetryConfig holds telemetry/observability settings.
+// Configurable at global or grove scope in settings.yaml, and overridable per-template/agent
+// in scion-agent.yaml. See design doc section 10.2 for the full reference.
+type V1TelemetryConfig struct {
+	Enabled  *bool                     `json:"enabled,omitempty" yaml:"enabled,omitempty" koanf:"enabled"`
+	Cloud    *V1TelemetryCloudConfig   `json:"cloud,omitempty" yaml:"cloud,omitempty" koanf:"cloud"`
+	Hub      *V1TelemetryHubConfig     `json:"hub,omitempty" yaml:"hub,omitempty" koanf:"hub"`
+	Local    *V1TelemetryLocalConfig   `json:"local,omitempty" yaml:"local,omitempty" koanf:"local"`
+	Filter   *V1TelemetryFilterConfig  `json:"filter,omitempty" yaml:"filter,omitempty" koanf:"filter"`
+	Resource map[string]string         `json:"resource,omitempty" yaml:"resource,omitempty" koanf:"resource"`
+}
+
+// V1TelemetryCloudConfig holds cloud OTLP forwarding settings.
+type V1TelemetryCloudConfig struct {
+	Enabled  *bool                  `json:"enabled,omitempty" yaml:"enabled,omitempty" koanf:"enabled"`
+	Endpoint string                 `json:"endpoint,omitempty" yaml:"endpoint,omitempty" koanf:"endpoint"`
+	Protocol string                 `json:"protocol,omitempty" yaml:"protocol,omitempty" koanf:"protocol"`
+	Headers  map[string]string      `json:"headers,omitempty" yaml:"headers,omitempty" koanf:"headers"`
+	TLS      *V1TelemetryTLSConfig  `json:"tls,omitempty" yaml:"tls,omitempty" koanf:"tls"`
+	Batch    *V1TelemetryBatchConfig `json:"batch,omitempty" yaml:"batch,omitempty" koanf:"batch"`
+}
+
+// V1TelemetryTLSConfig holds TLS settings for cloud OTLP export.
+type V1TelemetryTLSConfig struct {
+	Enabled            *bool `json:"enabled,omitempty" yaml:"enabled,omitempty" koanf:"enabled"`
+	InsecureSkipVerify *bool `json:"insecure_skip_verify,omitempty" yaml:"insecure_skip_verify,omitempty" koanf:"insecure_skip_verify"`
+}
+
+// V1TelemetryBatchConfig holds batch export settings.
+type V1TelemetryBatchConfig struct {
+	MaxSize int    `json:"max_size,omitempty" yaml:"max_size,omitempty" koanf:"max_size"`
+	Timeout string `json:"timeout,omitempty" yaml:"timeout,omitempty" koanf:"timeout"`
+}
+
+// V1TelemetryHubConfig holds Hub telemetry reporting settings.
+type V1TelemetryHubConfig struct {
+	Enabled        *bool  `json:"enabled,omitempty" yaml:"enabled,omitempty" koanf:"enabled"`
+	ReportInterval string `json:"report_interval,omitempty" yaml:"report_interval,omitempty" koanf:"report_interval"`
+}
+
+// V1TelemetryLocalConfig holds local debug telemetry output settings.
+type V1TelemetryLocalConfig struct {
+	Enabled *bool  `json:"enabled,omitempty" yaml:"enabled,omitempty" koanf:"enabled"`
+	File    string `json:"file,omitempty" yaml:"file,omitempty" koanf:"file"`
+	Console *bool  `json:"console,omitempty" yaml:"console,omitempty" koanf:"console"`
+}
+
+// V1TelemetryFilterConfig holds event filtering and sampling settings.
+type V1TelemetryFilterConfig struct {
+	Enabled          *bool                          `json:"enabled,omitempty" yaml:"enabled,omitempty" koanf:"enabled"`
+	RespectDebugMode *bool                          `json:"respect_debug_mode,omitempty" yaml:"respect_debug_mode,omitempty" koanf:"respect_debug_mode"`
+	Events           *V1TelemetryEventsConfig       `json:"events,omitempty" yaml:"events,omitempty" koanf:"events"`
+	Attributes       *V1TelemetryAttributesConfig   `json:"attributes,omitempty" yaml:"attributes,omitempty" koanf:"attributes"`
+	Sampling         *V1TelemetrySamplingConfig      `json:"sampling,omitempty" yaml:"sampling,omitempty" koanf:"sampling"`
+}
+
+// V1TelemetryEventsConfig holds event include/exclude lists.
+type V1TelemetryEventsConfig struct {
+	Include []string `json:"include,omitempty" yaml:"include,omitempty" koanf:"include"`
+	Exclude []string `json:"exclude,omitempty" yaml:"exclude,omitempty" koanf:"exclude"`
+}
+
+// V1TelemetryAttributesConfig holds attribute redaction and hashing lists.
+type V1TelemetryAttributesConfig struct {
+	Redact []string `json:"redact,omitempty" yaml:"redact,omitempty" koanf:"redact"`
+	Hash   []string `json:"hash,omitempty" yaml:"hash,omitempty" koanf:"hash"`
+}
+
+// V1TelemetrySamplingConfig holds sampling rate settings.
+type V1TelemetrySamplingConfig struct {
+	Default *float64           `json:"default,omitempty" yaml:"default,omitempty" koanf:"default"`
+	Rates   map[string]float64 `json:"rates,omitempty" yaml:"rates,omitempty" koanf:"rates"`
 }
 
 // V1RuntimeConfig extends RuntimeConfig with a Type field.
@@ -401,6 +476,15 @@ func versionedEnvKeyMapper(s string) string {
 		rest := strings.TrimPrefix(key, "server_")
 		return "server." + mapServerEnvKey(rest)
 	}
+	// Handle nested telemetry keys — deep nesting with compound field names
+	if strings.HasPrefix(key, "telemetry_") {
+		rest := strings.TrimPrefix(key, "telemetry_")
+		return "telemetry." + mapTelemetryEnvKey(rest)
+	}
+	// Handle SCION_OTEL_* → telemetry.cloud.* mappings
+	if strings.HasPrefix(key, "otel_") {
+		return mapOtelEnvKey(strings.TrimPrefix(key, "otel_"))
+	}
 
 	return key
 }
@@ -505,6 +589,91 @@ func isSectionName(name string) bool {
 		return true
 	}
 	return false
+}
+
+// knownTelemetryCompoundFields lists multi-word snake_case field names used in telemetry config.
+// Sorted longest-first so longer matches take priority.
+var knownTelemetryCompoundFields = []string{
+	"insecure_skip_verify",
+	"respect_debug_mode",
+	"report_interval",
+	"max_size",
+}
+
+// telemetrySectionNames are sub-sections within the telemetry config tree.
+var telemetrySectionNames = map[string]bool{
+	"cloud": true, "hub": true, "local": true, "filter": true,
+	"tls": true, "batch": true, "events": true, "attributes": true, "sampling": true,
+}
+
+// mapTelemetryEnvKey maps the portion after "telemetry_" to a dotted path.
+// Examples:
+//
+//	"enabled" -> "enabled"
+//	"cloud_enabled" -> "cloud.enabled"
+//	"cloud_tls_insecure_skip_verify" -> "cloud.tls.insecure_skip_verify"
+//	"filter_respect_debug_mode" -> "filter.respect_debug_mode"
+//	"hub_report_interval" -> "hub.report_interval"
+func mapTelemetryEnvKey(key string) string {
+	if key == "" {
+		return ""
+	}
+
+	// Check if the entire key is a known compound field
+	for _, compound := range knownTelemetryCompoundFields {
+		if key == compound {
+			return key
+		}
+	}
+
+	// Try splitting at underscores
+	for i := 0; i < len(key); i++ {
+		if key[i] == '_' {
+			prefix := key[:i]
+			rest := key[i+1:]
+
+			// Check if the rest starts with a known compound field
+			for _, compound := range knownTelemetryCompoundFields {
+				if strings.HasPrefix(rest, compound) {
+					if len(rest) == len(compound) {
+						return prefix + "." + compound
+					}
+					if rest[len(compound)] == '_' {
+						return prefix + "." + compound + "." + mapTelemetryEnvKey(rest[len(compound)+1:])
+					}
+				}
+			}
+
+			// If prefix is a known section, recurse on the rest
+			if telemetrySectionNames[prefix] {
+				return prefix + "." + mapTelemetryEnvKey(rest)
+			}
+		}
+	}
+
+	return key
+}
+
+// mapOtelEnvKey maps OTEL_* env keys to telemetry.cloud.* settings paths.
+// Examples:
+//
+//	"endpoint" -> "telemetry.cloud.endpoint"
+//	"protocol" -> "telemetry.cloud.protocol"
+//	"headers" -> "telemetry.cloud.headers"
+//	"insecure" -> "telemetry.cloud.tls.insecure_skip_verify"
+func mapOtelEnvKey(key string) string {
+	switch key {
+	case "endpoint":
+		return "telemetry.cloud.endpoint"
+	case "protocol":
+		return "telemetry.cloud.protocol"
+	case "headers":
+		return "telemetry.cloud.headers"
+	case "insecure":
+		return "telemetry.cloud.tls.insecure_skip_verify"
+	default:
+		return "telemetry.cloud." + key
+	}
 }
 
 // ConvertV1ServerToGlobalConfig maps a V1ServerConfig (snake_case) to a GlobalConfig (camelCase).

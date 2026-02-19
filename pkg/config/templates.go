@@ -610,6 +610,9 @@ func MergeScionConfig(base, override *api.ScionConfig) *api.ScionConfig {
 			result.Hub.Endpoint = override.Hub.Endpoint
 		}
 	}
+	if override.Telemetry != nil {
+		result.Telemetry = mergeTelemetryConfig(result.Telemetry, override.Telemetry)
+	}
 	if override.AgentInstructions != "" {
 		result.AgentInstructions = override.AgentInstructions
 	}
@@ -660,6 +663,138 @@ func MergeScionConfig(base, override *api.ScionConfig) *api.ScionConfig {
 			}
 			result.Info = &infoCopy
 		}
+	}
+
+	return &result
+}
+
+// mergeTelemetryConfig merges override telemetry settings on top of base.
+// Non-nil override fields replace base values (last write wins).
+func mergeTelemetryConfig(base, override *api.TelemetryConfig) *api.TelemetryConfig {
+	if base == nil {
+		cp := *override
+		return &cp
+	}
+	result := *base
+
+	if override.Enabled != nil {
+		result.Enabled = override.Enabled
+	}
+	if override.Cloud != nil {
+		if result.Cloud == nil {
+			result.Cloud = &api.TelemetryCloudConfig{}
+		}
+		if override.Cloud.Enabled != nil {
+			result.Cloud.Enabled = override.Cloud.Enabled
+		}
+		if override.Cloud.Endpoint != "" {
+			result.Cloud.Endpoint = override.Cloud.Endpoint
+		}
+		if override.Cloud.Protocol != "" {
+			result.Cloud.Protocol = override.Cloud.Protocol
+		}
+		if override.Cloud.Headers != nil {
+			result.Cloud.Headers = mergeMaps(result.Cloud.Headers, override.Cloud.Headers)
+		}
+		if override.Cloud.TLS != nil {
+			if result.Cloud.TLS == nil {
+				result.Cloud.TLS = &api.TelemetryTLS{}
+			}
+			if override.Cloud.TLS.Enabled != nil {
+				result.Cloud.TLS.Enabled = override.Cloud.TLS.Enabled
+			}
+			if override.Cloud.TLS.InsecureSkipVerify != nil {
+				result.Cloud.TLS.InsecureSkipVerify = override.Cloud.TLS.InsecureSkipVerify
+			}
+		}
+		if override.Cloud.Batch != nil {
+			if result.Cloud.Batch == nil {
+				result.Cloud.Batch = &api.TelemetryBatch{}
+			}
+			if override.Cloud.Batch.MaxSize > 0 {
+				result.Cloud.Batch.MaxSize = override.Cloud.Batch.MaxSize
+			}
+			if override.Cloud.Batch.Timeout != "" {
+				result.Cloud.Batch.Timeout = override.Cloud.Batch.Timeout
+			}
+		}
+	}
+	if override.Hub != nil {
+		if result.Hub == nil {
+			result.Hub = &api.TelemetryHubConfig{}
+		}
+		if override.Hub.Enabled != nil {
+			result.Hub.Enabled = override.Hub.Enabled
+		}
+		if override.Hub.ReportInterval != "" {
+			result.Hub.ReportInterval = override.Hub.ReportInterval
+		}
+	}
+	if override.Local != nil {
+		if result.Local == nil {
+			result.Local = &api.TelemetryLocalConfig{}
+		}
+		if override.Local.Enabled != nil {
+			result.Local.Enabled = override.Local.Enabled
+		}
+		if override.Local.File != "" {
+			result.Local.File = override.Local.File
+		}
+		if override.Local.Console != nil {
+			result.Local.Console = override.Local.Console
+		}
+	}
+	if override.Filter != nil {
+		if result.Filter == nil {
+			result.Filter = &api.TelemetryFilterConfig{}
+		}
+		if override.Filter.Enabled != nil {
+			result.Filter.Enabled = override.Filter.Enabled
+		}
+		if override.Filter.RespectDebugMode != nil {
+			result.Filter.RespectDebugMode = override.Filter.RespectDebugMode
+		}
+		if override.Filter.Events != nil {
+			if result.Filter.Events == nil {
+				result.Filter.Events = &api.TelemetryEventsConfig{}
+			}
+			if override.Filter.Events.Include != nil {
+				result.Filter.Events.Include = override.Filter.Events.Include
+			}
+			if override.Filter.Events.Exclude != nil {
+				result.Filter.Events.Exclude = override.Filter.Events.Exclude
+			}
+		}
+		if override.Filter.Attributes != nil {
+			if result.Filter.Attributes == nil {
+				result.Filter.Attributes = &api.TelemetryAttributesConfig{}
+			}
+			if override.Filter.Attributes.Redact != nil {
+				result.Filter.Attributes.Redact = override.Filter.Attributes.Redact
+			}
+			if override.Filter.Attributes.Hash != nil {
+				result.Filter.Attributes.Hash = override.Filter.Attributes.Hash
+			}
+		}
+		if override.Filter.Sampling != nil {
+			if result.Filter.Sampling == nil {
+				result.Filter.Sampling = &api.TelemetrySamplingConfig{}
+			}
+			if override.Filter.Sampling.Default != nil {
+				result.Filter.Sampling.Default = override.Filter.Sampling.Default
+			}
+			if override.Filter.Sampling.Rates != nil {
+				if result.Filter.Sampling.Rates == nil {
+					result.Filter.Sampling.Rates = make(map[string]float64)
+				}
+				for k, v := range override.Filter.Sampling.Rates {
+					result.Filter.Sampling.Rates[k] = v
+				}
+			}
+		}
+	}
+	if override.Resource != nil {
+		result.Resource = mergeMaps(result.Resource, override.Resource)
 	}
 
 	return &result

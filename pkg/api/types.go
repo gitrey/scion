@@ -178,6 +178,79 @@ type AgentHubConfig struct {
 	Endpoint string `json:"endpoint,omitempty" yaml:"endpoint,omitempty"`
 }
 
+// TelemetryConfig holds telemetry/observability settings at the agent/template level.
+// These are merged with settings-level telemetry config (last write wins).
+type TelemetryConfig struct {
+	Enabled  *bool                    `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+	Cloud    *TelemetryCloudConfig    `json:"cloud,omitempty" yaml:"cloud,omitempty"`
+	Hub      *TelemetryHubConfig      `json:"hub,omitempty" yaml:"hub,omitempty"`
+	Local    *TelemetryLocalConfig    `json:"local,omitempty" yaml:"local,omitempty"`
+	Filter   *TelemetryFilterConfig   `json:"filter,omitempty" yaml:"filter,omitempty"`
+	Resource map[string]string        `json:"resource,omitempty" yaml:"resource,omitempty"`
+}
+
+// TelemetryCloudConfig holds cloud OTLP forwarding settings.
+type TelemetryCloudConfig struct {
+	Enabled  *bool             `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+	Endpoint string            `json:"endpoint,omitempty" yaml:"endpoint,omitempty"`
+	Protocol string            `json:"protocol,omitempty" yaml:"protocol,omitempty"`
+	Headers  map[string]string `json:"headers,omitempty" yaml:"headers,omitempty"`
+	TLS      *TelemetryTLS     `json:"tls,omitempty" yaml:"tls,omitempty"`
+	Batch    *TelemetryBatch   `json:"batch,omitempty" yaml:"batch,omitempty"`
+}
+
+// TelemetryTLS holds TLS settings for OTLP export.
+type TelemetryTLS struct {
+	Enabled            *bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+	InsecureSkipVerify *bool `json:"insecure_skip_verify,omitempty" yaml:"insecure_skip_verify,omitempty"`
+}
+
+// TelemetryBatch holds batch export settings.
+type TelemetryBatch struct {
+	MaxSize int    `json:"max_size,omitempty" yaml:"max_size,omitempty"`
+	Timeout string `json:"timeout,omitempty" yaml:"timeout,omitempty"`
+}
+
+// TelemetryHubConfig holds Hub telemetry reporting settings.
+type TelemetryHubConfig struct {
+	Enabled        *bool  `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+	ReportInterval string `json:"report_interval,omitempty" yaml:"report_interval,omitempty"`
+}
+
+// TelemetryLocalConfig holds local debug telemetry output settings.
+type TelemetryLocalConfig struct {
+	Enabled *bool  `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+	File    string `json:"file,omitempty" yaml:"file,omitempty"`
+	Console *bool  `json:"console,omitempty" yaml:"console,omitempty"`
+}
+
+// TelemetryFilterConfig holds event filtering and sampling settings.
+type TelemetryFilterConfig struct {
+	Enabled          *bool                      `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+	RespectDebugMode *bool                      `json:"respect_debug_mode,omitempty" yaml:"respect_debug_mode,omitempty"`
+	Events           *TelemetryEventsConfig     `json:"events,omitempty" yaml:"events,omitempty"`
+	Attributes       *TelemetryAttributesConfig `json:"attributes,omitempty" yaml:"attributes,omitempty"`
+	Sampling         *TelemetrySamplingConfig    `json:"sampling,omitempty" yaml:"sampling,omitempty"`
+}
+
+// TelemetryEventsConfig holds event include/exclude lists.
+type TelemetryEventsConfig struct {
+	Include []string `json:"include,omitempty" yaml:"include,omitempty"`
+	Exclude []string `json:"exclude,omitempty" yaml:"exclude,omitempty"`
+}
+
+// TelemetryAttributesConfig holds attribute redaction and hashing lists.
+type TelemetryAttributesConfig struct {
+	Redact []string `json:"redact,omitempty" yaml:"redact,omitempty"`
+	Hash   []string `json:"hash,omitempty" yaml:"hash,omitempty"`
+}
+
+// TelemetrySamplingConfig holds sampling rate settings.
+type TelemetrySamplingConfig struct {
+	Default *float64           `json:"default,omitempty" yaml:"default,omitempty"`
+	Rates   map[string]float64 `json:"rates,omitempty" yaml:"rates,omitempty"`
+}
+
 type ScionConfig struct {
 	Harness       string            `json:"harness,omitempty" yaml:"harness,omitempty"`
 	HarnessConfig string            `json:"harness_config,omitempty" yaml:"harness_config,omitempty"`
@@ -194,7 +267,8 @@ type ScionConfig struct {
 	Services    []ServiceSpec     `json:"services,omitempty" yaml:"services,omitempty"`
 	MaxTurns    int               `json:"max_turns,omitempty" yaml:"max_turns,omitempty"`
 	MaxDuration string            `json:"max_duration,omitempty" yaml:"max_duration,omitempty"`
-	Hub         *AgentHubConfig   `json:"hub,omitempty" yaml:"hub,omitempty"`
+	Hub         *AgentHubConfig      `json:"hub,omitempty" yaml:"hub,omitempty"`
+	Telemetry   *TelemetryConfig     `json:"telemetry,omitempty" yaml:"telemetry,omitempty"`
 
 	// Agnostic template fields (Phase 2)
 	AgentInstructions  string `json:"agent_instructions,omitempty" yaml:"agent_instructions,omitempty"`

@@ -130,6 +130,12 @@
       },
       "additionalProperties": false
     },
+    "telemetry": {
+      "$ref": "#/$defs/telemetryConfig",
+      "description": "Telemetry and observability settings. Merged across global, grove, template, and agent scopes (last write wins).",
+      "x-scope": "any",
+      "x-since": "1"
+    },
     "runtimes": {
       "type": "object",
       "description": "Named container runtime definitions. Map keys are arbitrary labels; the 'type' field determines the runtime type.",
@@ -457,6 +463,236 @@
         "gcp_project_id": { "type": "string", "x-env-var": "SCION_SERVER_SECRETS_GCPPROJECTID" },
         "gcp_credentials": { "type": "string", "x-env-var": "SCION_SERVER_SECRETS_GCPCREDENTIALS" }
       }
+    },
+    "telemetryConfig": {
+      "type": "object",
+      "description": "Telemetry and observability configuration.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable or disable telemetry collection.",
+          "x-env-var": "SCION_TELEMETRY_ENABLED",
+          "x-since": "1"
+        },
+        "cloud": { "$ref": "#/$defs/telemetryCloud" },
+        "hub": { "$ref": "#/$defs/telemetryHub" },
+        "local": { "$ref": "#/$defs/telemetryLocal" },
+        "filter": { "$ref": "#/$defs/telemetryFilter" },
+        "resource": {
+          "type": "object",
+          "description": "Resource attributes added to all telemetry events (e.g., service.name).",
+          "additionalProperties": { "type": "string" },
+          "x-since": "1"
+        }
+      },
+      "additionalProperties": false
+    },
+    "telemetryCloud": {
+      "type": "object",
+      "description": "Cloud OTLP forwarding settings.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable forwarding telemetry to cloud backend.",
+          "x-env-var": "SCION_TELEMETRY_CLOUD_ENABLED",
+          "x-since": "1"
+        },
+        "endpoint": {
+          "type": "string",
+          "description": "Cloud OTLP endpoint URL.",
+          "x-env-var": "SCION_OTEL_ENDPOINT",
+          "x-since": "1"
+        },
+        "protocol": {
+          "type": "string",
+          "enum": ["grpc", "http"],
+          "default": "grpc",
+          "description": "OTLP transport protocol.",
+          "x-env-var": "SCION_OTEL_PROTOCOL",
+          "x-since": "1"
+        },
+        "headers": {
+          "type": "object",
+          "description": "Additional headers for OTLP export requests.",
+          "additionalProperties": { "type": "string" },
+          "x-env-var": "SCION_OTEL_HEADERS",
+          "x-since": "1"
+        },
+        "tls": { "$ref": "#/$defs/telemetryTLS" },
+        "batch": { "$ref": "#/$defs/telemetryBatch" }
+      },
+      "additionalProperties": false
+    },
+    "telemetryTLS": {
+      "type": "object",
+      "description": "TLS settings for cloud OTLP export.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable TLS for the OTLP connection.",
+          "x-since": "1"
+        },
+        "insecure_skip_verify": {
+          "type": "boolean",
+          "default": false,
+          "description": "Skip TLS certificate verification.",
+          "x-env-var": "SCION_OTEL_INSECURE",
+          "x-since": "1"
+        }
+      },
+      "additionalProperties": false
+    },
+    "telemetryBatch": {
+      "type": "object",
+      "description": "Batch export settings for OTLP.",
+      "properties": {
+        "max_size": {
+          "type": "integer",
+          "default": 512,
+          "description": "Maximum number of spans per batch export.",
+          "x-since": "1"
+        },
+        "timeout": {
+          "type": "string",
+          "default": "5s",
+          "description": "Maximum wait time before flushing a partial batch (e.g., '5s').",
+          "x-since": "1"
+        }
+      },
+      "additionalProperties": false
+    },
+    "telemetryHub": {
+      "type": "object",
+      "description": "Hub telemetry reporting settings.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable reporting telemetry summaries to the Hub. Auto-enabled in hosted mode.",
+          "x-env-var": "SCION_TELEMETRY_HUB_ENABLED",
+          "x-since": "1"
+        },
+        "report_interval": {
+          "type": "string",
+          "default": "30s",
+          "description": "Interval between Hub telemetry reports (e.g., '30s').",
+          "x-since": "1"
+        }
+      },
+      "additionalProperties": false
+    },
+    "telemetryLocal": {
+      "type": "object",
+      "description": "Local debug telemetry output settings.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable local debug telemetry output.",
+          "x-env-var": "SCION_TELEMETRY_DEBUG",
+          "x-since": "1"
+        },
+        "file": {
+          "type": "string",
+          "description": "File path for JSONL telemetry output. If empty, no file output.",
+          "x-since": "1"
+        },
+        "console": {
+          "type": "boolean",
+          "default": false,
+          "description": "Write telemetry debug output to stderr.",
+          "x-since": "1"
+        }
+      },
+      "additionalProperties": false
+    },
+    "telemetryFilter": {
+      "type": "object",
+      "description": "Event filtering and sampling configuration.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable event filtering.",
+          "x-since": "1"
+        },
+        "respect_debug_mode": {
+          "type": "boolean",
+          "default": true,
+          "description": "Bypass filters when debug mode is active.",
+          "x-since": "1"
+        },
+        "events": { "$ref": "#/$defs/telemetryFilterEvents" },
+        "attributes": { "$ref": "#/$defs/telemetryFilterAttributes" },
+        "sampling": { "$ref": "#/$defs/telemetrySampling" }
+      },
+      "additionalProperties": false
+    },
+    "telemetryFilterEvents": {
+      "type": "object",
+      "description": "Event type include/exclude lists.",
+      "properties": {
+        "include": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Event types to include. Empty means all.",
+          "x-since": "1"
+        },
+        "exclude": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Event types to exclude (applied after include).",
+          "x-since": "1"
+        }
+      },
+      "additionalProperties": false
+    },
+    "telemetryFilterAttributes": {
+      "type": "object",
+      "description": "Attribute redaction and hashing for privacy.",
+      "properties": {
+        "redact": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Attribute names to redact (replace with placeholder).",
+          "x-since": "1"
+        },
+        "hash": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Attribute names to hash (one-way transform preserving correlation).",
+          "x-since": "1"
+        }
+      },
+      "additionalProperties": false
+    },
+    "telemetrySampling": {
+      "type": "object",
+      "description": "Sampling rate settings.",
+      "properties": {
+        "default": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "default": 1.0,
+          "description": "Default sampling rate (0.0 to 1.0).",
+          "x-since": "1"
+        },
+        "rates": {
+          "type": "object",
+          "description": "Per-event-type sampling rates. Keys are event type names.",
+          "additionalProperties": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "x-since": "1"
+        }
+      },
+      "additionalProperties": false
     }
   }
 }

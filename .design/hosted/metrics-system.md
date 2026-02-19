@@ -835,6 +835,97 @@ telemetry:
     # agent.id, grove.id, runtime.broker populated automatically
 ```
 
+### 10.3 Implementation Notes: Settings Schema Integration
+
+The telemetry configuration block from section 10.2 has been integrated into the
+Scion v1 settings schema, enabling configuration at every scope in the hierarchy.
+
+#### Field Naming Convention
+
+The design doc (section 10.2) uses camelCase YAML keys (`insecureSkipVerify`,
+`reportInterval`, `respectDebugMode`, `maxSize`). The v1 settings schema uses
+snake_case consistently. The implementation normalizes all fields to snake_case:
+
+| Design Doc (camelCase) | Settings Schema (snake_case) |
+|------------------------|------------------------------|
+| `insecureSkipVerify`   | `insecure_skip_verify`       |
+| `reportInterval`       | `report_interval`            |
+| `respectDebugMode`     | `respect_debug_mode`         |
+| `maxSize`              | `max_size`                   |
+
+#### Scope Hierarchy & Merge Order
+
+Telemetry settings are resolved across four scopes using **last-write-wins**
+semantics. Each scope can set any subset of the telemetry block; unset fields
+inherit from the previous scope.
+
+```
+1. Embedded defaults (pkg/config/embeds/default_settings.yaml)
+2. Global settings   (~/.scion/settings.yaml)         → telemetry.*
+3. Grove settings    (.scion/settings.yaml)            → telemetry.*
+4. Template config   (scion-agent.yaml in template)    → telemetry.*
+5. Agent config      (scion-agent.yaml in agent home)  → telemetry.*
+6. Environment vars  (SCION_TELEMETRY_*, SCION_OTEL_*) → highest priority
+```
+
+Scopes 1–3 use the `VersionedSettings.Telemetry` field (`V1TelemetryConfig`)
+loaded via Koanf with automatic merging. Scopes 4–5 use the
+`ScionConfig.Telemetry` field (`api.TelemetryConfig`) merged via
+`MergeScionConfig` → `mergeTelemetryConfig`. Scope 6 applies via env var mapping
+in Koanf's env provider.
+
+#### Environment Variable Mapping
+
+Telemetry env vars map to settings paths via `versionedEnvKeyMapper`:
+
+| Environment Variable                          | Settings Path                                |
+|------------------------------------------------|----------------------------------------------|
+| `SCION_TELEMETRY_ENABLED`                      | `telemetry.enabled`                          |
+| `SCION_TELEMETRY_CLOUD_ENABLED`                | `telemetry.cloud.enabled`                    |
+| `SCION_TELEMETRY_CLOUD_TLS_INSECURE_SKIP_VERIFY` | `telemetry.cloud.tls.insecure_skip_verify` |
+| `SCION_TELEMETRY_CLOUD_BATCH_MAX_SIZE`         | `telemetry.cloud.batch.max_size`             |
+| `SCION_TELEMETRY_HUB_ENABLED`                  | `telemetry.hub.enabled`                      |
+| `SCION_TELEMETRY_HUB_REPORT_INTERVAL`          | `telemetry.hub.report_interval`              |
+| `SCION_TELEMETRY_LOCAL_ENABLED`                 | `telemetry.local.enabled`                    |
+| `SCION_TELEMETRY_FILTER_ENABLED`                | `telemetry.filter.enabled`                   |
+| `SCION_TELEMETRY_FILTER_RESPECT_DEBUG_MODE`     | `telemetry.filter.respect_debug_mode`        |
+| `SCION_TELEMETRY_DEBUG`                         | `telemetry.local.enabled`                    |
+
+The `SCION_OTEL_*` variables from section 10.1 are aliased into the
+`telemetry.cloud` sub-tree:
+
+| Environment Variable    | Settings Path                                |
+|-------------------------|----------------------------------------------|
+| `SCION_OTEL_ENDPOINT`  | `telemetry.cloud.endpoint`                   |
+| `SCION_OTEL_PROTOCOL`  | `telemetry.cloud.protocol`                   |
+| `SCION_OTEL_HEADERS`   | `telemetry.cloud.headers`                    |
+| `SCION_OTEL_INSECURE`  | `telemetry.cloud.tls.insecure_skip_verify`   |
+
+#### Files Modified
+
+- `pkg/config/settings_v1.go` — `V1TelemetryConfig` and sub-structs; `Telemetry`
+  field on `VersionedSettings`; `mapTelemetryEnvKey`, `mapOtelEnvKey` functions.
+- `pkg/config/schemas/settings-v1.schema.json` — `telemetry` property and
+  `$defs` for all sub-schemas (`telemetryConfig`, `telemetryCloud`, etc.).
+- `pkg/config/schemas/agent-v1.schema.json` — `telemetry` property and
+  `telemetryConfig` definition for template/agent-level overrides.
+- `pkg/api/types.go` — `TelemetryConfig` and sub-structs; `Telemetry` field on
+  `ScionConfig`.
+- `pkg/config/templates.go` — `mergeTelemetryConfig` function and its invocation
+  in `MergeScionConfig`.
+- `pkg/config/settings_v1_test.go` — Round-trip, validation, hierarchy merge,
+  and env override tests.
+- `pkg/config/templates_test.go` — `MergeScionConfig` telemetry merge tests;
+  agent config validation test.
+
+#### Harness-Specific Env Vars
+
+Harness-native telemetry env vars (e.g., `GEMINI_TELEMETRY_*`, standard
+`OTEL_EXPORTER_*`) are injected at agent start time via the existing harness
+`Env` mechanism. These tell the harness process where to emit raw OTLP data
+(typically `localhost:4317` for the sciontool collector). They are not part of
+this settings schema since they use provider-specific namespaces.
+
 ---
 
 ## 11. Open Questions
