@@ -16,6 +16,7 @@ package hub
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -1047,6 +1048,8 @@ type ListGrovesResponse struct {
 }
 
 type CreateGroveRequest struct {
+	ID         string            `json:"id,omitempty"`
+	Slug       string            `json:"slug,omitempty"`
 	Name       string            `json:"name"`
 	GitRemote  string            `json:"gitRemote,omitempty"`
 	Visibility string            `json:"visibility,omitempty"`
@@ -1150,10 +1153,35 @@ func (s *Server) createGrove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Idempotency: if client provided an ID, check for existing grove
+	if req.ID != "" {
+		existing, err := s.store.GetGrove(ctx, req.ID)
+		if err == nil {
+			// Grove already exists — return it as-is (idempotent)
+			writeJSON(w, http.StatusOK, existing)
+			return
+		}
+		if !errors.Is(err, store.ErrNotFound) {
+			writeErrorFromErr(w, err, "")
+			return
+		}
+		// Not found — proceed to create with client-provided ID
+	}
+
+	groveID := req.ID
+	if groveID == "" {
+		groveID = api.NewUUID()
+	}
+
+	slug := req.Slug
+	if slug == "" {
+		slug = api.Slugify(req.Name)
+	}
+
 	grove := &store.Grove{
-		ID:         api.NewUUID(),
+		ID:         groveID,
 		Name:       req.Name,
-		Slug:       api.Slugify(req.Name),
+		Slug:       slug,
 		GitRemote:  util.NormalizeGitRemote(req.GitRemote),
 		Labels:     req.Labels,
 		Visibility: req.Visibility,

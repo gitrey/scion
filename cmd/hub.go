@@ -20,9 +20,12 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
+	"github.com/ptone/scion-agent/pkg/api"
 	"github.com/ptone/scion-agent/pkg/apiclient"
 	"github.com/ptone/scion-agent/pkg/brokercredentials"
 	"github.com/ptone/scion-agent/pkg/config"
@@ -256,7 +259,37 @@ Examples:
 
 var (
 	hubGrovesDeletePreserveAgents bool
+	hubGroveCreateSlug            string
+	hubGroveCreateName            string
+	hubGroveCreateBranch          string
+	hubGroveCreateVisibility      string
 )
+
+// hubGroveCreateCmd creates a grove on the Hub from a git URL
+var hubGroveCreateCmd = &cobra.Command{
+	Use:   "create <git-url>",
+	Short: "Create a grove on the Hub from a git repository URL",
+	Long: `Creates a new grove on the Hub anchored to a remote git repository.
+The grove can be used to start agents without a local checkout of the repository.
+
+The grove ID is deterministically derived from the normalized git URL, so
+creating a grove for the same URL is idempotent.
+
+Examples:
+  # Create from HTTPS URL
+  scion hub grove create https://github.com/acme/widgets.git
+
+  # Create from SSH URL
+  scion hub grove create git@github.com:acme/widgets.git
+
+  # Create with a specific branch
+  scion hub grove create https://github.com/acme/widgets.git --branch release/v2
+
+  # Create with a custom slug
+  scion hub grove create https://github.com/acme/widgets.git --slug widgets`,
+	Args: cobra.ExactArgs(1),
+	RunE: runHubGroveCreate,
+}
 
 func init() {
 	rootCmd.AddCommand(hubCmd)
@@ -271,6 +304,7 @@ func init() {
 	// Grove subcommands
 	hubGrovesCmd.AddCommand(hubGrovesInfoCmd)
 	hubGrovesCmd.AddCommand(hubGrovesDeleteCmd)
+	hubGrovesCmd.AddCommand(hubGroveCreateCmd)
 
 	// Broker subcommands
 	hubBrokersCmd.AddCommand(hubBrokersInfoCmd)
@@ -286,6 +320,13 @@ func init() {
 	hubGrovesDeleteCmd.Flags().BoolVarP(&autoConfirm, "yes", "y", false, "Skip confirmation prompt")
 	hubGrovesDeleteCmd.Flags().BoolVar(&nonInteractive, "non-interactive", false, "Non-interactive mode: implies --yes, errors on ambiguous prompts")
 	hubGrovesDeleteCmd.Flags().BoolVar(&hubGrovesDeletePreserveAgents, "preserve-agents", false, "Preserve agents when deleting grove")
+
+	// Grove create flags
+	hubGroveCreateCmd.Flags().StringVar(&hubGroveCreateSlug, "slug", "", "Override the auto-derived slug")
+	hubGroveCreateCmd.Flags().StringVar(&hubGroveCreateName, "name", "", "Human-friendly display name (defaults to repo name)")
+	hubGroveCreateCmd.Flags().StringVar(&hubGroveCreateBranch, "branch", "", "Base branch for the grove (defaults to detected default branch, or main)")
+	hubGroveCreateCmd.Flags().StringVar(&hubGroveCreateVisibility, "visibility", "", "Grove visibility: private, team, or public (default: private)")
+	hubGroveCreateCmd.Flags().BoolVar(&hubOutputJSON, "json", false, "Output in JSON format")
 
 	// Broker subcommand flags
 	hubBrokersInfoCmd.Flags().BoolVar(&hubOutputJSON, "json", false, "Output in JSON format")
@@ -1048,6 +1089,137 @@ func runHubGrovesDelete(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+func runHubGroveCreate(cmd *cobra.Command, args []string) error {
+	// Bridge --json flag to global --format
+	if hubOutputJSON {
+		outputFormat = "json"
+	}
+
+	gitURL := args[0]
+
+	// Validate URL format
+	if !util.IsGitURL(gitURL) {
+		return fmt.Errorf("invalid git URL: %s\n\nAccepted formats:\n  https://github.com/org/repo.git\n  git@github.com:org/repo.git\n  ssh://git@github.com/org/repo", gitURL)
+	}
+
+	// Normalize and build identity string
+	normalized := util.NormalizeGitRemote(gitURL)
+	identity := normalized
+	if hubGroveCreateBranch != "" {
+		identity = normalized + "@" + hubGroveCreateBranch
+	}
+
+	// Deterministic ID
+	groveID := util.HashGroveID(identity)
+
+	// Derive slug
+	org, repo := util.ExtractOrgRepo(gitURL)
+	slug := hubGroveCreateSlug
+	if slug == "" {
+		slugBase := org + "-" + repo
+		if hubGroveCreateBranch != "" {
+			slugBase += "-" + hubGroveCreateBranch
+		}
+		slug = api.Slugify(slugBase)
+	}
+
+	// Display name
+	displayName := hubGroveCreateName
+	if displayName == "" {
+		displayName = repo
+	}
+
+	// Detect default branch
+	defaultBranch := hubGroveCreateBranch
+	if defaultBranch == "" {
+		cloneURL := util.ToHTTPSCloneURL(gitURL)
+		defaultBranch = detectDefaultBranch(cloneURL)
+		if defaultBranch == "" {
+			defaultBranch = "main"
+		}
+	}
+
+	// Load settings and get Hub client
+	resolvedPath, _, err := config.ResolveGrovePath(grovePath)
+	if err != nil {
+		return fmt.Errorf("failed to resolve grove path: %w", err)
+	}
+
+	settings, err := config.LoadSettings(resolvedPath)
+	if err != nil {
+		return fmt.Errorf("failed to load settings: %w", err)
+	}
+
+	client, err := getHubClient(settings)
+	if err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Create grove (idempotent — returns existing if ID matches)
+	grove, err := client.Groves().Create(ctx, &hubclient.CreateGroveRequest{
+		ID:         groveID,
+		Name:       displayName,
+		Slug:       slug,
+		GitRemote:  normalized,
+		Visibility: hubGroveCreateVisibility,
+		Labels: map[string]string{
+			"scion.dev/default-branch": defaultBranch,
+			"scion.dev/clone-url":      util.ToHTTPSCloneURL(gitURL),
+			"scion.dev/source-url":     gitURL,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create grove: %w", err)
+	}
+
+	if isJSONOutput() {
+		return outputJSON(map[string]interface{}{
+			"id":        grove.ID,
+			"slug":      grove.Slug,
+			"name":      grove.Name,
+			"gitRemote": grove.GitRemote,
+			"branch":    defaultBranch,
+		})
+	}
+
+	fmt.Printf("Grove created:\n")
+	fmt.Printf("  ID:     %s\n", grove.ID)
+	fmt.Printf("  Slug:   %s\n", grove.Slug)
+	fmt.Printf("  Remote: %s\n", grove.GitRemote)
+	fmt.Printf("  Branch: %s\n", defaultBranch)
+	fmt.Printf("\nNext steps:\n")
+	fmt.Printf("  1. Set git credentials:\n")
+	fmt.Printf("     scion hub secret set GITHUB_TOKEN --grove %s <your-pat>\n\n", grove.Slug)
+	fmt.Printf("  2. Start an agent:\n")
+	fmt.Printf("     scion start my-agent --grove %s \"your task\"\n", grove.Slug)
+
+	return nil
+}
+
+// detectDefaultBranch probes a git remote to detect its default branch.
+// Returns the branch name or empty string on failure.
+func detectDefaultBranch(cloneURL string) string {
+	cmd := exec.Command("git", "ls-remote", "--symref", cloneURL, "HEAD")
+	output, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+
+	// Parse output for "ref: refs/heads/<branch>\tHEAD"
+	for _, line := range strings.Split(string(output), "\n") {
+		if strings.HasPrefix(line, "ref: refs/heads/") && strings.Contains(line, "\tHEAD") {
+			branch := strings.TrimPrefix(line, "ref: refs/heads/")
+			branch = strings.TrimSuffix(branch, "\tHEAD")
+			return strings.TrimSpace(branch)
+		}
+	}
+
+	return ""
 }
 
 // findGroveByName finds a grove by name (case-insensitive) and returns it.

@@ -1927,3 +1927,87 @@ func TestCORSPreflight(t *testing.T) {
 		t.Errorf("expected CORS origin 'http://localhost:3000', got %q", corsOrigin)
 	}
 }
+
+func TestGroveCreateIdempotent(t *testing.T) {
+	srv, _ := testServer(t)
+
+	body := CreateGroveRequest{
+		ID:        "deterministic-id-1234",
+		Name:      "My Grove",
+		Slug:      "my-grove",
+		GitRemote: "github.com/acme/widgets",
+	}
+
+	// First create — should return 201
+	rec := doRequest(t, srv, http.MethodPost, "/api/v1/groves", body)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("first create: expected status 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var grove1 store.Grove
+	if err := json.NewDecoder(rec.Body).Decode(&grove1); err != nil {
+		t.Fatalf("failed to decode first response: %v", err)
+	}
+	if grove1.ID != "deterministic-id-1234" {
+		t.Errorf("expected ID %q, got %q", "deterministic-id-1234", grove1.ID)
+	}
+
+	// Second create with same ID — should return 200 with same grove
+	rec2 := doRequest(t, srv, http.MethodPost, "/api/v1/groves", body)
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("second create: expected status 200, got %d: %s", rec2.Code, rec2.Body.String())
+	}
+
+	var grove2 store.Grove
+	if err := json.NewDecoder(rec2.Body).Decode(&grove2); err != nil {
+		t.Fatalf("failed to decode second response: %v", err)
+	}
+	if grove2.ID != grove1.ID {
+		t.Errorf("idempotent create returned different ID: %q vs %q", grove2.ID, grove1.ID)
+	}
+	if grove2.Name != grove1.Name {
+		t.Errorf("idempotent create returned different name: %q vs %q", grove2.Name, grove1.Name)
+	}
+}
+
+func TestGroveCreateWithSlug(t *testing.T) {
+	srv, _ := testServer(t)
+
+	body := CreateGroveRequest{
+		Name: "My Project",
+		Slug: "custom-slug",
+	}
+
+	rec := doRequest(t, srv, http.MethodPost, "/api/v1/groves", body)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var grove store.Grove
+	if err := json.NewDecoder(rec.Body).Decode(&grove); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if grove.Slug != "custom-slug" {
+		t.Errorf("expected slug %q, got %q", "custom-slug", grove.Slug)
+	}
+
+	// Without slug — should auto-derive from name
+	body2 := CreateGroveRequest{
+		Name: "Auto Slug Project",
+	}
+
+	rec2 := doRequest(t, srv, http.MethodPost, "/api/v1/groves", body2)
+	if rec2.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d: %s", rec2.Code, rec2.Body.String())
+	}
+
+	var grove2 store.Grove
+	if err := json.NewDecoder(rec2.Body).Decode(&grove2); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if grove2.Slug != "auto-slug-project" {
+		t.Errorf("expected auto-derived slug %q, got %q", "auto-slug-project", grove2.Slug)
+	}
+}

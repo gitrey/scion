@@ -298,3 +298,122 @@ func TestGitUtils(t *testing.T) {
 		}
 	})
 }
+
+func TestIsGitURL(t *testing.T) {
+	tests := []struct {
+		input string
+		want  bool
+	}{
+		// Valid URLs
+		{"https://github.com/org/repo.git", true},
+		{"https://github.com/org/repo", true},
+		{"http://github.com/org/repo.git", true},
+		{"git@github.com:org/repo.git", true},
+		{"git@github.com:org/repo", true},
+		{"ssh://git@github.com/org/repo", true},
+		{"git://github.com/org/repo.git", true},
+		{"HTTPS://GITHUB.COM/org/repo.git", true},
+		{"git@gitlab.com:group/subgroup/repo.git", true},
+
+		// Invalid inputs
+		{"", false},
+		{"/local/path/to/repo", false},
+		{"./relative/path", false},
+		{"../parent/path", false},
+		{"github.com", false},          // bare hostname, no scheme recognized
+		{"git@github.com:", false},      // no path after colon
+		{"git@github.com:repo", false},  // no '/' in path
+		{"https://github.com/", false},  // path is just '/'
+		{"https://github.com", false},   // no path
+	}
+
+	for _, tt := range tests {
+		got := IsGitURL(tt.input)
+		if got != tt.want {
+			t.Errorf("IsGitURL(%q) = %v, want %v", tt.input, got, tt.want)
+		}
+	}
+}
+
+func TestToHTTPSCloneURL(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		// SSH shorthand → HTTPS
+		{"git@github.com:org/repo.git", "https://github.com/org/repo.git"},
+		{"git@github.com:org/repo", "https://github.com/org/repo.git"},
+
+		// ssh:// → HTTPS
+		{"ssh://git@github.com/org/repo", "https://github.com/org/repo.git"},
+		{"ssh://git@github.com/org/repo.git", "https://github.com/org/repo.git"},
+
+		// HTTPS passthrough
+		{"https://github.com/org/repo.git", "https://github.com/org/repo.git"},
+		{"https://github.com/org/repo", "https://github.com/org/repo.git"},
+
+		// git:// → HTTPS
+		{"git://github.com/org/repo.git", "https://github.com/org/repo.git"},
+
+		// http:// → HTTPS
+		{"http://github.com/org/repo.git", "https://github.com/org/repo.git"},
+
+		// Empty
+		{"", ""},
+	}
+
+	for _, tt := range tests {
+		got := ToHTTPSCloneURL(tt.input)
+		if got != tt.want {
+			t.Errorf("ToHTTPSCloneURL(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
+func TestExtractOrgRepo(t *testing.T) {
+	tests := []struct {
+		input   string
+		wantOrg string
+		wantRepo string
+	}{
+		{"https://github.com/acme/widgets.git", "acme", "widgets"},
+		{"git@github.com:acme/widgets.git", "acme", "widgets"},
+		{"ssh://git@github.com/acme/widgets", "acme", "widgets"},
+		{"https://github.com/Acme/Widgets.git", "acme", "widgets"},
+		{"git://github.com/org/repo.git", "org", "repo"},
+		{"", "", ""},
+	}
+
+	for _, tt := range tests {
+		org, repo := ExtractOrgRepo(tt.input)
+		if org != tt.wantOrg || repo != tt.wantRepo {
+			t.Errorf("ExtractOrgRepo(%q) = (%q, %q), want (%q, %q)", tt.input, org, repo, tt.wantOrg, tt.wantRepo)
+		}
+	}
+}
+
+func TestHashGroveID(t *testing.T) {
+	// Determinism: same input → same output
+	id1 := HashGroveID("github.com/acme/widgets")
+	id2 := HashGroveID("github.com/acme/widgets")
+	if id1 != id2 {
+		t.Errorf("HashGroveID not deterministic: %q != %q", id1, id2)
+	}
+
+	// Length: always 16 hex characters
+	if len(id1) != 16 {
+		t.Errorf("HashGroveID length = %d, want 16", len(id1))
+	}
+
+	// Different inputs → different outputs
+	id3 := HashGroveID("github.com/acme/gadgets")
+	if id1 == id3 {
+		t.Errorf("HashGroveID collision: %q == %q for different inputs", id1, id3)
+	}
+
+	// Branch qualifier produces different ID
+	id4 := HashGroveID("github.com/acme/widgets@release/v2")
+	if id1 == id4 {
+		t.Errorf("HashGroveID collision with branch qualifier: %q == %q", id1, id4)
+	}
+}

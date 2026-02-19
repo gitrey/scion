@@ -120,6 +120,8 @@ type RegisterGroveResponse struct {
 
 // CreateGroveRequest is the request for creating a grove without a broker.
 type CreateGroveRequest struct {
+	ID         string            `json:"id,omitempty"`
+	Slug       string            `json:"slug,omitempty"`
 	Name       string            `json:"name"`
 	GitRemote  string            `json:"gitRemote,omitempty"`
 	Visibility string            `json:"visibility,omitempty"`

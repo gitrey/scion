@@ -15,6 +15,8 @@
 package util
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"os/exec"
@@ -400,4 +402,118 @@ func NormalizeGitRemote(remote string) string {
 	remote = strings.TrimSuffix(remote, ".git")
 
 	return remote
+}
+
+// IsGitURL returns true if the string looks like a valid remote git URL.
+// Accepts HTTPS, SSH shorthand (git@host:path), ssh://, and git:// schemes.
+// Rejects empty strings, local paths, bare hostnames, and strings without a path containing '/'.
+func IsGitURL(s string) bool {
+	if s == "" {
+		return false
+	}
+
+	// Reject local paths (absolute or relative)
+	if strings.HasPrefix(s, "/") || strings.HasPrefix(s, "./") || strings.HasPrefix(s, "../") {
+		return false
+	}
+
+	// SSH shorthand: git@host:org/repo
+	if strings.HasPrefix(s, "git@") {
+		// Must have a colon separating host from path, and the path must contain '/'
+		colonIdx := strings.Index(s, ":")
+		if colonIdx < 0 || colonIdx == len(s)-1 {
+			return false
+		}
+		path := s[colonIdx+1:]
+		return strings.Contains(path, "/")
+	}
+
+	// Scheme-based URLs
+	for _, scheme := range []string{"https://", "http://", "ssh://", "git://"} {
+		if strings.HasPrefix(strings.ToLower(s), scheme) {
+			rest := s[len(scheme):]
+			// Must have a host and a path with '/'
+			// Strip optional user@ prefix for ssh://git@host/path
+			if atIdx := strings.Index(rest, "@"); atIdx >= 0 {
+				rest = rest[atIdx+1:]
+			}
+			// Must have host/path with at least one '/' in the path portion
+			slashIdx := strings.Index(rest, "/")
+			if slashIdx < 1 || slashIdx == len(rest)-1 {
+				return false
+			}
+			return true
+		}
+	}
+
+	return false
+}
+
+// ToHTTPSCloneURL converts any git URL to HTTPS clone form with a .git suffix.
+// SSH shorthand and ssh:// URLs are converted; HTTPS URLs are passed through
+// (with .git appended if missing).
+func ToHTTPSCloneURL(gitURL string) string {
+	if gitURL == "" {
+		return ""
+	}
+
+	result := gitURL
+
+	// Strip known schemes
+	for _, scheme := range []string{"https://", "http://", "ssh://", "git://"} {
+		if strings.HasPrefix(strings.ToLower(result), scheme) {
+			result = result[len(scheme):]
+			break
+		}
+	}
+
+	// Handle SSH shorthand: git@host:org/repo
+	if strings.HasPrefix(result, "git@") {
+		result = strings.TrimPrefix(result, "git@")
+		result = strings.Replace(result, ":", "/", 1)
+	}
+
+	// Strip optional user@ prefix (for ssh://git@host/path after scheme removal)
+	if atIdx := strings.Index(result, "@"); atIdx >= 0 {
+		slashIdx := strings.Index(result, "/")
+		if slashIdx < 0 || atIdx < slashIdx {
+			result = result[atIdx+1:]
+		}
+	}
+
+	// Ensure .git suffix
+	if !strings.HasSuffix(result, ".git") {
+		result += ".git"
+	}
+
+	return "https://" + result
+}
+
+// ExtractOrgRepo extracts the organization and repository name from a git URL.
+// It uses NormalizeGitRemote to get the canonical "host/org/repo" form, then
+// returns the last two path components.
+func ExtractOrgRepo(gitURL string) (org, repo string) {
+	normalized := NormalizeGitRemote(gitURL)
+	if normalized == "" {
+		return "", ""
+	}
+
+	parts := strings.Split(normalized, "/")
+	if len(parts) < 3 {
+		// Not enough segments (need host/org/repo)
+		if len(parts) == 2 {
+			return "", parts[1]
+		}
+		return "", ""
+	}
+
+	return parts[len(parts)-2], parts[len(parts)-1]
+}
+
+// HashGroveID computes a deterministic grove ID from a normalized identity string.
+// It takes the first 8 bytes of the SHA-256 hash and hex-encodes them to produce
+// a 16-character string.
+func HashGroveID(normalized string) string {
+	h := sha256.Sum256([]byte(normalized))
+	return hex.EncodeToString(h[:8])
 }
