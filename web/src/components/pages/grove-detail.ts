@@ -391,8 +391,8 @@ export class ScionPageGroveDetail extends LitElement {
     try {
       // Load grove and agents in parallel
       const [groveResponse, agentsResponse] = await Promise.all([
-        fetch(`/api/groves/${this.groveId}`, { credentials: 'include' }),
-        fetch(`/api/groves/${this.groveId}/agents`, { credentials: 'include' }),
+        fetch(`/api/v1/groves/${this.groveId}`, { credentials: 'include' }),
+        fetch(`/api/v1/groves/${this.groveId}/agents`, { credentials: 'include' }),
       ]);
 
       if (!groveResponse.ok) {
@@ -463,13 +463,13 @@ export class ScionPageGroveDetail extends LitElement {
 
       switch (action) {
         case 'start':
-          response = await fetch(`/api/agents/${agentId}/start`, {
+          response = await fetch(`/api/v1/agents/${agentId}/start`, {
             method: 'POST',
             credentials: 'include',
           });
           break;
         case 'stop':
-          response = await fetch(`/api/agents/${agentId}/stop`, {
+          response = await fetch(`/api/v1/agents/${agentId}/stop`, {
             method: 'POST',
             credentials: 'include',
           });
@@ -479,7 +479,7 @@ export class ScionPageGroveDetail extends LitElement {
             this.actionLoading = { ...this.actionLoading, [agentId]: false };
             return;
           }
-          response = await fetch(`/api/agents/${agentId}`, {
+          response = await fetch(`/api/v1/agents/${agentId}`, {
             method: 'DELETE',
             credentials: 'include',
           });

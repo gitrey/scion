@@ -107,6 +107,8 @@ type WebServer struct {
 	store        store.Store
 	userTokenSvc *UserTokenService
 	events       *ChannelEventPublisher // nil when no publisher configured
+	hubHandler   http.Handler           // mounted Hub API handler, or nil
+	hubShutdown  func(context.Context) error // Hub resource cleanup, or nil
 }
 
 // spaShellTemplate is the Go html/template for the SPA shell page.
@@ -360,6 +362,70 @@ func (ws *WebServer) SetEventPublisher(pub *ChannelEventPublisher) {
 	ws.events = pub
 }
 
+// MountHubAPI mounts the Hub API handler on the web server so both are
+// served on a single port. hubShutdown is called during graceful shutdown
+// to clean up Hub resources (control channels, broker auth, etc.).
+func (ws *WebServer) MountHubAPI(hubHandler http.Handler, hubShutdown func(context.Context) error) {
+	ws.hubHandler = hubHandler
+	ws.hubShutdown = hubShutdown
+	// Register the Hub API handler on the mux. Go's ServeMux uses
+	// longest-prefix matching, so /api/v1/ takes priority over /
+	// (the SPA catch-all).
+	ws.mux.Handle("/api/v1/", ws.sessionToBearerMiddleware(hubHandler))
+}
+
+// sessionToBearerMiddleware bridges cookie-based web sessions to the
+// Bearer-token authentication expected by the Hub API. If the request
+// already carries an Authorization header it is passed through unchanged.
+func (ws *WebServer) sessionToBearerMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// If the caller already supplied an Authorization header, pass through.
+		if r.Header.Get("Authorization") != "" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		session, err := ws.sessionStore.Get(r, webSessionName)
+		if err != nil {
+			// No valid session — let the Hub's own auth return 401.
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		accessToken, _ := session.Values[sessKeyHubAccessToken].(string)
+		if accessToken == "" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// Check token expiry and refresh if needed.
+		if expiryMs, ok := session.Values[sessKeyHubTokenExpiry].(int64); ok {
+			if time.Now().UnixMilli() >= expiryMs {
+				// Token expired — try to refresh.
+				refreshToken, _ := session.Values[sessKeyHubRefreshToken].(string)
+				if refreshToken != "" && ws.userTokenSvc != nil {
+					newAccess, newRefresh, expiresIn, err := ws.userTokenSvc.RefreshTokens(refreshToken)
+					if err == nil {
+						accessToken = newAccess
+						session.Values[sessKeyHubAccessToken] = newAccess
+						session.Values[sessKeyHubRefreshToken] = newRefresh
+						session.Values[sessKeyHubTokenExpiry] = time.Now().Add(time.Duration(expiresIn) * time.Second).UnixMilli()
+						_ = session.Save(r, w)
+					} else {
+						slog.Debug("Failed to refresh Hub token", "error", err)
+						// Fall through with expired token; Hub auth will reject it.
+					}
+				}
+			}
+		}
+
+		// Clone the request and inject the Authorization header.
+		r2 := r.Clone(r.Context())
+		r2.Header.Set("Authorization", "Bearer "+accessToken)
+		next.ServeHTTP(w, r2)
+	})
+}
+
 // registerRoutes sets up the web server routes.
 func (ws *WebServer) registerRoutes() {
 	ws.mux.HandleFunc("/healthz", ws.handleHealthz)
@@ -373,9 +439,6 @@ func (ws *WebServer) registerRoutes() {
 	ws.mux.HandleFunc("/auth/debug", ws.handleAuthDebug)
 	// SSE event stream (protected by session auth middleware)
 	ws.mux.HandleFunc("/events", ws.handleSSE)
-	// API catch-all: return JSON 404 for unhandled /api/ routes so the SPA
-	// handler doesn't serve HTML that the client tries to parse as JSON.
-	ws.mux.HandleFunc("/api/", ws.handleAPINotFound)
 	// SPA catch-all (protected by session auth middleware)
 	ws.mux.HandleFunc("/", ws.spaHandler())
 }
@@ -439,17 +502,6 @@ func isHashedAsset(path string) bool {
 		}
 	}
 	return true
-}
-
-// handleAPINotFound returns a JSON 404 for any /api/ route not handled by a
-// specific handler. Without this, the SPA catch-all would serve HTML for API
-// requests, causing JSON parse errors in the frontend.
-func (ws *WebServer) handleAPINotFound(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusNotFound)
-	json.NewEncoder(w).Encode(map[string]string{
-		"error": "not found",
-	})
 }
 
 // spaHandler returns the SPA shell HTML for any route not matched by other handlers.
@@ -585,6 +637,10 @@ func isPublicRoute(path string) bool {
 		return true
 	case strings.HasPrefix(path, "/auth/"):
 		return true
+	case strings.HasPrefix(path, "/api/v1/"):
+		// Hub API routes have their own auth (UnifiedAuth middleware).
+		// Let them pass through the Web session auth layer untouched.
+		return true
 	case path == "/login":
 		return true
 	case path == "/favicon.ico":
@@ -639,6 +695,22 @@ func (ws *WebServer) devAuthMiddleware(next http.Handler) http.Handler {
 		session.Values[sessKeyUserEmail] = devUser.Email
 		session.Values[sessKeyUserName] = devUser.Name
 		session.Values[sessKeyUserAvatar] = devUser.AvatarURL
+
+		// Generate Hub JWTs so the session-to-bearer middleware can
+		// authenticate API requests, mirroring handleOAuthCallback.
+		if ws.userTokenSvc != nil {
+			if _, ok := session.Values[sessKeyHubAccessToken].(string); !ok {
+				accessToken, refreshToken, expiresIn, err := ws.userTokenSvc.GenerateTokenPair(
+					devUser.UserID, devUser.Email, devUser.Name, "", ClientTypeWeb,
+				)
+				if err == nil {
+					session.Values[sessKeyHubAccessToken] = accessToken
+					session.Values[sessKeyHubRefreshToken] = refreshToken
+					session.Values[sessKeyHubTokenExpiry] = time.Now().Add(time.Duration(expiresIn) * time.Second).UnixMilli()
+				}
+			}
+		}
+
 		if err := session.Save(r, w); err != nil {
 			slog.Error("Failed to save dev-auth session", "error", err)
 		}
@@ -1126,13 +1198,20 @@ func (ws *WebServer) Start(ctx context.Context) error {
 	}
 }
 
-// Shutdown gracefully shuts down the web server.
+// Shutdown gracefully shuts down the web server and any mounted Hub resources.
 func (ws *WebServer) Shutdown(ctx context.Context) error {
 	if ws.httpServer == nil {
 		return nil
 	}
 
 	slog.Info("Web frontend server shutting down...")
+
+	// Clean up mounted Hub resources (control channels, broker auth, event publisher)
+	if ws.hubShutdown != nil {
+		if err := ws.hubShutdown(ctx); err != nil {
+			slog.Error("Failed to clean up Hub resources during web server shutdown", "error", err)
+		}
+	}
 
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()

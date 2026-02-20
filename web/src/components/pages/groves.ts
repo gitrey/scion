@@ -265,7 +265,7 @@ export class ScionPageGroves extends LitElement {
     this.error = null;
 
     try {
-      const response = await fetch('/api/groves', {
+      const response = await fetch('/api/v1/groves', {
         credentials: 'include',
       });
 

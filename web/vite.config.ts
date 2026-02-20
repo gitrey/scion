@@ -38,7 +38,7 @@ function mockApiPlugin(): Plugin {
                     res.end();
                     return;
                 }
-                if (req.url?.startsWith('/api/')) {
+                if (req.url?.startsWith('/api/v1/')) {
                     res.setHeader('Content-Type', 'application/json');
                     res.statusCode = 200;
                     res.end('[]');

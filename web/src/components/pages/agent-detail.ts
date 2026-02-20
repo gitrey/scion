@@ -393,7 +393,7 @@ export class ScionPageAgentDetail extends LitElement {
     this.error = null;
 
     try {
-      const agentResponse = await fetch(`/api/agents/${this.agentId}`, {
+      const agentResponse = await fetch(`/api/v1/agents/${this.agentId}`, {
         credentials: 'include',
       });
 
@@ -418,7 +418,7 @@ export class ScionPageAgentDetail extends LitElement {
       // Try to load grove info
       if (this.agent.groveId) {
         try {
-          const groveResponse = await fetch(`/api/groves/${this.agent.groveId}`, {
+          const groveResponse = await fetch(`/api/v1/groves/${this.agent.groveId}`, {
             credentials: 'include',
           });
           if (groveResponse.ok) {
@@ -477,13 +477,13 @@ export class ScionPageAgentDetail extends LitElement {
 
       switch (action) {
         case 'start':
-          response = await fetch(`/api/agents/${this.agentId}/start`, {
+          response = await fetch(`/api/v1/agents/${this.agentId}/start`, {
             method: 'POST',
             credentials: 'include',
           });
           break;
         case 'stop':
-          response = await fetch(`/api/agents/${this.agentId}/stop`, {
+          response = await fetch(`/api/v1/agents/${this.agentId}/stop`, {
             method: 'POST',
             credentials: 'include',
           });
@@ -493,7 +493,7 @@ export class ScionPageAgentDetail extends LitElement {
             this.actionLoading = false;
             return;
           }
-          response = await fetch(`/api/agents/${this.agentId}`, {
+          response = await fetch(`/api/v1/agents/${this.agentId}`, {
             method: 'DELETE',
             credentials: 'include',
           });

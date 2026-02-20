@@ -314,7 +314,8 @@ func runServerStart(cmd *cobra.Command, args []string) error {
 	}
 
 	// Check if server ports are already in use
-	if enableHub {
+	if enableHub && !enableWeb {
+		// Only check Hub port when running standalone (not mounted on web server).
 		status := checkPort(cfg.Hub.Host, cfg.Hub.Port)
 		if status.inUse {
 			if status.isScionServer {
@@ -603,16 +604,29 @@ func runServerStart(cmd *cobra.Command, args []string) error {
 		hubSrv.SetSecretBackend(secretBackend)
 		log.Printf("Secret backend configured: %s", cfg.Secrets.Backend)
 
-		log.Printf("Starting Hub API server on %s:%d", cfg.Hub.Host, cfg.Hub.Port)
 		log.Printf("Database: %s (%s)", cfg.Database.Driver, cfg.Database.URL)
 
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			if err := hubSrv.Start(ctx); err != nil {
-				errCh <- fmt.Errorf("hub server error: %w", err)
-			}
-		}()
+		if !enableWeb {
+			// Hub runs its own HTTP server (standalone mode).
+			log.Printf("Starting Hub API server on %s:%d", cfg.Hub.Host, cfg.Hub.Port)
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				if err := hubSrv.Start(ctx); err != nil {
+					errCh <- fmt.Errorf("hub server error: %w", err)
+				}
+			}()
+		} else {
+			// Combined mode: Hub API is mounted on the Web server.
+			// Only need to clean up Hub resources on shutdown.
+			log.Printf("Hub API will be mounted on Web server (port %d)", webPort)
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-ctx.Done()
+				hubSrv.CleanupResources(context.Background())
+			}()
+		}
 	}
 
 	// Start Web Frontend if enabled
@@ -673,6 +687,9 @@ func runServerStart(cmd *cobra.Command, args []string) error {
 			webSrv.SetOAuthService(hubSrv.GetOAuthService())
 			webSrv.SetStore(hubSrv.GetStore())
 			webSrv.SetUserTokenService(hubSrv.GetUserTokenService())
+
+			// Mount Hub API on Web server — single port serves both.
+			webSrv.MountHubAPI(hubSrv.Handler(), hubSrv.CleanupResources)
 		}
 
 		log.Printf("Starting Web Frontend on %s:%d", webCfg.Host, webCfg.Port)

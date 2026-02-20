@@ -244,7 +244,7 @@ export class ScionPageTerminal extends LitElement {
     this.error = null;
 
     try {
-      const response = await fetch(`/api/agents/${this.agentId}`, {
+      const response = await fetch(`/api/v1/agents/${this.agentId}`, {
         credentials: 'include',
       });
 
@@ -365,7 +365,7 @@ export class ScionPageTerminal extends LitElement {
     if (!this.terminal) return;
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const url = `${protocol}//${window.location.host}/api/agents/${this.agentId}/pty?cols=${this.terminal.cols}&rows=${this.terminal.rows}`;
+    const url = `${protocol}//${window.location.host}/api/v1/agents/${this.agentId}/pty?cols=${this.terminal.cols}&rows=${this.terminal.rows}`;
 
     console.debug('[Terminal] Connecting to', url);
     this.socket = new WebSocket(url);

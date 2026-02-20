@@ -765,6 +765,28 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	return srv.Shutdown(ctx)
 }
 
+// CleanupResources shuts down Hub-owned resources (control channel, broker auth,
+// event publisher) without stopping an HTTP server. Use this in combined mode
+// where the Hub API is mounted on the WebServer and has no listener of its own.
+func (s *Server) CleanupResources(ctx context.Context) error {
+	s.mu.RLock()
+	cc := s.controlChannel
+	s.mu.RUnlock()
+
+	slog.Info("Cleaning up Hub resources...")
+
+	if cc != nil {
+		cc.Shutdown()
+	}
+	if s.brokerAuthService != nil {
+		s.brokerAuthService.Close()
+	}
+	if s.events != nil {
+		s.events.Close()
+	}
+	return nil
+}
+
 // Handler returns the HTTP handler for the server.
 // This is useful for testing without starting a listener.
 func (s *Server) Handler() http.Handler {

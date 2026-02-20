@@ -15,6 +15,7 @@
 package hub
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -385,10 +386,10 @@ func TestSessionMiddleware_ProtectedRedirect(t *testing.T) {
 }
 
 func TestSessionMiddleware_ProtectedAPI(t *testing.T) {
-	// Unauthenticated API request (no Accept: text/html) should get 401 JSON
+	// Unauthenticated non-browser request to a protected route should get 401 JSON
 	ws := newTestWebServer(t, WebServerConfig{})
 
-	req := httptest.NewRequest("GET", "/api/data", nil)
+	req := httptest.NewRequest("GET", "/events", nil)
 	req.Header.Set("Accept", "application/json")
 	rec := httptest.NewRecorder()
 
@@ -403,29 +404,125 @@ func TestSessionMiddleware_ProtectedAPI(t *testing.T) {
 	assert.Equal(t, "authentication required", result["error"])
 }
 
-func TestAPINotFound_ReturnsJSON(t *testing.T) {
-	// Authenticated requests to unknown /api/ routes should get JSON 404,
-	// not the SPA HTML shell (which would cause JSON parse errors in the frontend).
+func TestMountHubAPI_RoutesToHub(t *testing.T) {
+	// Mount a mock Hub handler on the WebServer and verify that
+	// /api/v1/* requests are routed to it.
 	ws := newDevAuthWebServer(t)
 
-	paths := []string{"/api/groves", "/api/agents", "/api/v1/unknown", "/api/foo/bar"}
-	for _, path := range paths {
-		t.Run(path, func(t *testing.T) {
-			req := httptest.NewRequest("GET", path, nil)
-			rec := httptest.NewRecorder()
+	mockHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]string{"source": "hub", "path": r.URL.Path})
+	})
+	ws.MountHubAPI(mockHandler, func(ctx context.Context) error { return nil })
 
-			ws.Handler().ServeHTTP(rec, req)
+	handler := ws.Handler()
 
-			resp := rec.Result()
-			assert.Equal(t, http.StatusNotFound, resp.StatusCode)
-			assert.Equal(t, "application/json", resp.Header.Get("Content-Type"))
+	// /api/v1/groves should reach the Hub handler
+	req := httptest.NewRequest("GET", "/api/v1/groves", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
 
-			body, _ := io.ReadAll(resp.Body)
-			var result map[string]string
-			require.NoError(t, json.Unmarshal(body, &result), "response should be valid JSON for %s", path)
-			assert.Equal(t, "not found", result["error"])
-		})
+	resp := rec.Result()
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, "application/json", resp.Header.Get("Content-Type"))
+
+	body, _ := io.ReadAll(resp.Body)
+	var result map[string]string
+	require.NoError(t, json.Unmarshal(body, &result))
+	assert.Equal(t, "hub", result["source"])
+	assert.Equal(t, "/api/v1/groves", result["path"])
+
+	// /api/v1/agents should also reach the Hub handler
+	req2 := httptest.NewRequest("GET", "/api/v1/agents", nil)
+	rec2 := httptest.NewRecorder()
+	handler.ServeHTTP(rec2, req2)
+	assert.Equal(t, http.StatusOK, rec2.Result().StatusCode)
+}
+
+func TestSessionToBearerMiddleware(t *testing.T) {
+	// Verify that a session with a Hub JWT has the token injected
+	// as an Authorization header when routed to the Hub handler.
+	ws := newDevAuthWebServer(t)
+
+	// Set up user token service for JWT generation
+	tokenSvc, err := NewUserTokenService(UserTokenConfig{})
+	require.NoError(t, err)
+	ws.SetUserTokenService(tokenSvc)
+
+	var capturedAuthHeader string
+	mockHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedAuthHeader = r.Header.Get("Authorization")
+		w.WriteHeader(http.StatusOK)
+	})
+	ws.MountHubAPI(mockHandler, func(ctx context.Context) error { return nil })
+
+	handler := ws.Handler()
+
+	// First request: auto-login via dev-auth (establishes session with JWT)
+	req1 := httptest.NewRequest("GET", "/api/v1/groves", nil)
+	rec1 := httptest.NewRecorder()
+	handler.ServeHTTP(rec1, req1)
+	assert.Equal(t, http.StatusOK, rec1.Result().StatusCode)
+	assert.True(t, strings.HasPrefix(capturedAuthHeader, "Bearer "),
+		"session-to-bearer should inject Authorization header, got %q", capturedAuthHeader)
+}
+
+func TestSessionToBearerMiddleware_NoToken(t *testing.T) {
+	// Without a session, requests should pass through without an Authorization header.
+	ws := newTestWebServer(t, WebServerConfig{})
+
+	var capturedAuthHeader string
+	mockHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedAuthHeader = r.Header.Get("Authorization")
+		w.WriteHeader(http.StatusOK)
+	})
+	ws.MountHubAPI(mockHandler, func(ctx context.Context) error { return nil })
+
+	handler := ws.Handler()
+
+	req := httptest.NewRequest("GET", "/api/v1/groves", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Result().StatusCode)
+	assert.Empty(t, capturedAuthHeader, "no session = no Authorization header")
+}
+
+func TestDevAuthMiddleware_GeneratesHubTokens(t *testing.T) {
+	// When userTokenSvc is available, dev-auth should generate Hub JWTs in the session.
+	tokenSvc, err := NewUserTokenService(UserTokenConfig{})
+	require.NoError(t, err)
+
+	ws := newDevAuthWebServer(t)
+	ws.SetUserTokenService(tokenSvc)
+
+	handler := ws.Handler()
+
+	// Trigger dev auto-login
+	req := httptest.NewRequest("GET", "/auth/me", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusOK, rec.Result().StatusCode)
+
+	// Verify the session cookie contains Hub tokens by making a second request
+	// to an /api/v1/ route and checking the Authorization header is injected.
+	var capturedAuth string
+	mockHub := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedAuth = r.Header.Get("Authorization")
+		w.WriteHeader(http.StatusOK)
+	})
+	ws.MountHubAPI(mockHub, func(ctx context.Context) error { return nil })
+
+	req2 := httptest.NewRequest("GET", "/api/v1/test", nil)
+	for _, c := range rec.Result().Cookies() {
+		req2.AddCookie(c)
 	}
+	rec2 := httptest.NewRecorder()
+	handler.ServeHTTP(rec2, req2)
+
+	assert.True(t, strings.HasPrefix(capturedAuth, "Bearer "),
+		"dev-auth should generate Hub JWT, got Authorization: %q", capturedAuth)
 }
 
 func TestDevAuth_AutoLogin(t *testing.T) {
@@ -781,11 +878,13 @@ func TestIsPublicRoute(t *testing.T) {
 		{"/auth/debug", true},
 		{"/login", true},
 		{"/favicon.ico", true},
+		{"/api/v1/groves", true},
+		{"/api/v1/agents", true},
+		{"/api/v1/auth/login", true},
 		{"/", false},
 		{"/groves", false},
 		{"/agents", false},
 		{"/settings", false},
-		{"/api/data", false},
 	}
 
 	for _, tt := range tests {
