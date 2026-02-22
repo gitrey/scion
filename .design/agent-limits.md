@@ -295,3 +295,58 @@ When neither `max_turns` nor `max_duration` is configured, no enforcement occurs
 | `agent-limits.json` gets corrupted | Use atomic writes (write-to-temp + rename), matching the pattern used by `agent-info.json`. |
 | Harness doesn't emit `agent-end` events consistently | Fall back to `model-end` events for turn counting. Log a warning if neither event type is received after the session starts. |
 | Removing host-side timer before sciontool enforcement is deployed | Phase 4 (removal) depends on Phase 2 and 3 being deployed first. Both approaches can coexist temporarily -- the host-side timer acts as a fallback. |
+
+## 8. Open Questions
+
+### OQ1: What counts as a "turn"?
+
+The current design increments the turn counter on `agent-end` events, where one "turn" is one full LLM response cycle (which may include many tool calls and sub-invocations). An alternative is counting `model-end` events, which correspond to raw LLM API calls.
+
+- **`agent-end` (proposed):** Coarser granularity. A single turn in Claude Code can involve dozens of tool calls and sub-agent spawns. Better maps to the user-facing concept of "the agent did one thing." Gives the agent room to work within each turn.
+- **`model-end`:** Finer granularity. Directly correlates with API cost. A `max_turns: 50` limit on `model-end` would be much more restrictive than the same limit on `agent-end`.
+
+The right choice depends on whether the goal is **controlling cost** (prefer `model-end`) or **controlling autonomy scope** (prefer `agent-end`). A hybrid approach (expose both as `max_turns` and `max_model_calls`) adds configuration surface area.
+
+**Decision needed:** Which event should increment the counter? Or should both be configurable?
+
+### OQ2: Resume behavior -- do counters reset?
+
+The design does not address what happens to `turn_count` and the duration timer when an agent is stopped and later resumed via `scion attach` or `scion start --resume`.
+
+- **Option A: Reset on resume.** Each "run" gets a fresh budget. Simple, but allows indefinite total resource consumption across multiple resumes.
+- **Option B: Accumulate across resumes.** The limits apply to the agent's total lifetime. Requires persisting the elapsed duration and turn count across container restarts. More complex, but provides a true total budget.
+- **Option C: Reset turns, accumulate duration.** Turns reset because each resume typically brings a new task. Duration accumulates because wall-clock cost is cumulative. Pragmatic middle ground.
+
+**Decision needed:** What is the expected lifecycle model for limits when agents are resumed?
+
+### OQ3: Turn state storage -- separate file or extend agent-info.json?
+
+The design introduces `~/agent-limits.json` for persisting turn count. An alternative is adding `turn_count` and `max_turns` fields directly to the existing `~/agent-info.json`.
+
+- **Separate file (proposed):** Avoids lock contention between the status handler and limits handler (both do atomic read-modify-write). Clear separation of concerns.
+- **Extend `agent-info.json`:** One fewer file to manage. Turn count is visible alongside status in a single read. But requires coordinating writes between two independent code paths, risking lost updates.
+
+**Decision needed:** Separate file or shared file?
+
+### OQ4: Exit code selection
+
+The design proposes exit code `10` for limit-exceeded exits. This is arbitrary and should be validated against:
+
+- Container runtime conventions (Docker uses 125-127 for internal errors, 128+N for signal exits).
+- Harness exit codes (Claude Code and Gemini CLI may use specific codes).
+- Any existing scion conventions for non-zero exits.
+
+Codes 1-9 are generally safe for application use. Code 10 is unlikely to collide but has no particular semantic convention behind it.
+
+**Decision needed:** Is exit code 10 acceptable, or should a different code be used?
+
+### OQ5: Graceful vs immediate turn limit enforcement
+
+When the turn limit is hit, the event arrives during a `sciontool hook` invocation -- meaning the harness is actively mid-execution. The current design sends `SIGUSR1` immediately, triggering `SIGTERM` to the harness.
+
+- **Immediate (proposed):** Simple. The harness gets SIGTERM and has the grace period to clean up. But the current response is interrupted mid-stream.
+- **Deferred/graceful:** Instead of signaling immediately, write a "limit reached" flag. The harness checks this flag (or sciontool injects a stop signal) at the next natural pause point (e.g., before the next prompt submission). The current response completes fully. Requires harness cooperation or a hook-level gate.
+
+The immediate approach is simpler and sufficient for a first implementation. Graceful enforcement could be added later if mid-response termination causes problems (e.g., uncommitted work).
+
+**Decision needed:** Is immediate termination acceptable for v1, with graceful as a future enhancement?
