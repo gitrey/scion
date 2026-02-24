@@ -457,6 +457,9 @@ func New(cfg ServerConfig, s store.Store) *Server {
 	// Initialize authorization service
 	srv.authzService = NewAuthzService(s, slog.Default())
 
+	// Seed default policies and groups (idempotent)
+	seedDefaultPoliciesAndGroups(ctx, s)
+
 	// Build unified auth configuration
 	srv.authConfig = AuthConfig{
 		Mode:           "production",

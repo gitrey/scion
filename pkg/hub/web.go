@@ -1059,6 +1059,9 @@ func (ws *WebServer) handleOAuthCallback(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
+	// Ensure user is a member of the hub-members group
+	ensureHubMembership(ctx, ws.store, user.ID)
+
 	// Generate Hub tokens if token service is available
 	if ws.userTokenSvc != nil {
 		accessToken, refreshToken, expiresIn, err := ws.userTokenSvc.GenerateTokenPair(

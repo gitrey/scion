@@ -1548,6 +1548,9 @@ func (s *Server) createGrove(w http.ResponseWriter, r *http.Request) {
 	// Create the associated grove_agents group (best-effort)
 	s.createGroveGroup(ctx, grove)
 
+	// Create grove members group and policy (best-effort)
+	s.createGroveMembersGroupAndPolicy(ctx, grove)
+
 	// Initialize filesystem workspace for hub-native groves (no git remote).
 	if grove.GitRemote == "" {
 		if err := s.initHubNativeGrove(grove); err != nil {
@@ -1575,6 +1578,66 @@ func (s *Server) createGroveGroup(ctx context.Context, grove *store.Grove) {
 	}
 	if err := s.store.CreateGroup(ctx, groveGroup); err != nil {
 		slog.Warn("failed to create grove group", "grove", grove.ID, "error", err)
+	}
+}
+
+// createGroveMembersGroupAndPolicy creates an explicit members group for a grove
+// and a policy allowing members to create agents. Best-effort; failures are logged.
+func (s *Server) createGroveMembersGroupAndPolicy(ctx context.Context, grove *store.Grove) {
+	// Create grove members group
+	membersGroup := &store.Group{
+		ID:        api.NewUUID(),
+		Name:      grove.Name + " Members",
+		Slug:      "grove:" + grove.Slug + ":members",
+		GroupType: store.GroupTypeExplicit,
+		GroveID:   grove.ID,
+		OwnerID:   grove.OwnerID,
+		CreatedBy: grove.CreatedBy,
+	}
+	if err := s.store.CreateGroup(ctx, membersGroup); err != nil {
+		slog.Warn("failed to create grove members group", "grove", grove.ID, "error", err)
+		return
+	}
+
+	// Add the creating user as a member
+	if grove.CreatedBy != "" {
+		if err := s.store.AddGroupMember(ctx, &store.GroupMember{
+			GroupID:    membersGroup.ID,
+			MemberType: store.GroupMemberTypeUser,
+			MemberID:   grove.CreatedBy,
+			Role:       store.GroupMemberRoleMember,
+		}); err != nil {
+			slog.Warn("failed to add creator to grove members group",
+				"grove", grove.ID, "user", grove.CreatedBy, "error", err)
+		}
+	}
+
+	// Create grove-level policy for member agent creation
+	policyName := "grove:" + grove.Slug + ":member-create-agents"
+	policy := &store.Policy{
+		ID:           api.NewUUID(),
+		Name:         policyName,
+		Description:  "Allow grove members to create agents",
+		ScopeType:    "grove",
+		ScopeID:      grove.ID,
+		ResourceType: "agent",
+		Actions:      []string{"create"},
+		Effect:       "allow",
+	}
+	if err := s.store.CreatePolicy(ctx, policy); err != nil {
+		slog.Warn("failed to create grove member policy",
+			"grove", grove.ID, "policy", policyName, "error", err)
+		return
+	}
+
+	// Bind policy to the members group
+	if err := s.store.AddPolicyBinding(ctx, &store.PolicyBinding{
+		PolicyID:      policy.ID,
+		PrincipalType: "group",
+		PrincipalID:   membersGroup.ID,
+	}); err != nil {
+		slog.Warn("failed to bind grove member policy",
+			"grove", grove.ID, "policy", policyName, "error", err)
 	}
 }
 
@@ -1769,6 +1832,9 @@ func (s *Server) handleGroveRegister(w http.ResponseWriter, r *http.Request) {
 
 		// Create the associated grove_agents group (best-effort)
 		s.createGroveGroup(ctx, grove)
+
+		// Create grove members group and policy (best-effort)
+		s.createGroveMembersGroupAndPolicy(ctx, grove)
 
 		// Auto-link brokers that have auto_provide enabled
 		autoProvideTrue := true

@@ -242,6 +242,9 @@ func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 		_ = s.store.UpdateUser(ctx, user)
 	}
 
+	// Ensure user is a member of the hub-members group
+	ensureHubMembership(ctx, s.store, user.ID)
+
 	// Generate tokens
 	if s.userTokenService == nil {
 		InternalError(w)
@@ -367,6 +370,9 @@ func (s *Server) handleAuthToken(w http.ResponseWriter, r *http.Request) {
 		}
 		_ = s.store.UpdateUser(ctx, user)
 	}
+
+	// Ensure user is a member of the hub-members group
+	ensureHubMembership(ctx, s.store, user.ID)
 
 	// Generate tokens
 	if s.userTokenService == nil {
@@ -781,6 +787,9 @@ func (s *Server) handleCLIAuthToken(w http.ResponseWriter, r *http.Request) {
 		_ = s.store.UpdateUser(ctx, user)
 	}
 
+	// Ensure user is a member of the hub-members group
+	ensureHubMembership(ctx, s.store, user.ID)
+
 	// Generate Hub tokens (CLI type for longer duration)
 	if s.userTokenService == nil {
 		InternalError(w)
@@ -1019,6 +1028,9 @@ func (s *Server) completeOAuthLogin(w http.ResponseWriter, r *http.Request, user
 		}
 		_ = s.store.UpdateUser(ctx, user)
 	}
+
+	// Ensure user is a member of the hub-members group
+	ensureHubMembership(ctx, s.store, user.ID)
 
 	// Generate Hub tokens (CLI type for longer duration)
 	if s.userTokenService == nil {

@@ -247,6 +247,9 @@ func (s *PolicyStore) DeletePolicy(ctx context.Context, id string) error {
 func (s *PolicyStore) ListPolicies(ctx context.Context, filter store.PolicyFilter, opts store.ListOptions) (*store.ListResult[store.Policy], error) {
 	query := s.client.AccessPolicy.Query()
 
+	if filter.Name != "" {
+		query.Where(accesspolicy.NameEQ(filter.Name))
+	}
 	if filter.ScopeType != "" {
 		query.Where(accesspolicy.ScopeTypeEQ(accesspolicy.ScopeType(filter.ScopeType)))
 	}

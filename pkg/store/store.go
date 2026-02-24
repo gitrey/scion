@@ -553,6 +553,7 @@ type PolicyStore interface {
 
 // PolicyFilter defines criteria for filtering policies.
 type PolicyFilter struct {
+	Name         string // Filter by policy name
 	ScopeType    string // Filter by scope type (hub, grove, resource)
 	ScopeID      string // Filter by scope ID
 	ResourceType string // Filter by resource type

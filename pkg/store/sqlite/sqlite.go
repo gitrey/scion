@@ -3391,6 +3391,10 @@ func (s *SQLiteStore) ListPolicies(ctx context.Context, filter store.PolicyFilte
 	var conditions []string
 	var args []interface{}
 
+	if filter.Name != "" {
+		conditions = append(conditions, "name = ?")
+		args = append(args, filter.Name)
+	}
 	if filter.ScopeType != "" {
 		conditions = append(conditions, "scope_type = ?")
 		args = append(args, filter.ScopeType)
