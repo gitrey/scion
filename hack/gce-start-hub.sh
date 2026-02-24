@@ -25,6 +25,8 @@ REPO_DIR="/home/scion/scion-agent"
 SCION_BIN="/usr/local/bin/scion"
 RESET_DB=false
 
+git push origin main
+
 # Parse arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -72,7 +74,7 @@ Environment=\"SCION_SERVER_AUTH_AUTHORIZEDDOMAINS=google.com\"
 StandardOutput=journal
 StandardError=journal
 ExecStartPre=/usr/bin/env
-ExecStart=%s --global server start --debug --enable-hub --enable-runtime-broker --enable-web --runtime-broker-port 9800 --web-port 8080 --session-secret \${SESSION_SECRET} --auto-provide
+ExecStart=%s --global server start --debug --enable-hub --enable-runtime-broker --enable-web --runtime-broker-port 9800 --web-port 8080 --storage-bucket \${SCION_HUB_STORAGE_BUCKET} --session-secret \${SESSION_SECRET} --auto-provide
 Restart=always
 RestartSec=5
 
