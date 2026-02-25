@@ -323,9 +323,14 @@ export class ScionPageAgentCreate extends LitElement {
       if (!response.ok) {
         const errorData = (await response.json().catch(() => ({}))) as {
           message?: string;
-          error?: string;
+          error?: string | { message?: string; code?: string };
         };
-        throw new Error(errorData.message || errorData.error || `HTTP ${response.status}`);
+        const msg =
+          (typeof errorData.error === 'object' && errorData.error?.message) ||
+          errorData.message ||
+          (typeof errorData.error === 'string' && errorData.error) ||
+          `HTTP ${response.status}`;
+        throw new Error(msg);
       }
 
       const result = (await response.json()) as { agent?: { id: string }; id?: string };

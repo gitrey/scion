@@ -812,7 +812,7 @@ func (ws *WebServer) devAuthMiddleware(next http.Handler) http.Handler {
 		if ws.userTokenSvc != nil {
 			if _, ok := session.Values[sessKeyHubAccessToken].(string); !ok {
 				accessToken, refreshToken, expiresIn, err := ws.userTokenSvc.GenerateTokenPair(
-					devUser.UserID, devUser.Email, devUser.Name, "", ClientTypeWeb,
+					devUser.UserID, devUser.Email, devUser.Name, "admin", ClientTypeWeb,
 				)
 				if err == nil {
 					session.Values[sessKeyHubAccessToken] = accessToken
