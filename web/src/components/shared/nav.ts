@@ -58,6 +58,17 @@ const NAV_SECTIONS: NavSection[] = [
   },
 ];
 
+/**
+ * Admin-only navigation section, shown at the bottom of the sidebar
+ */
+const ADMIN_SECTION: NavSection = {
+  title: 'Admin',
+  items: [
+    { path: '/admin/users', label: 'Users', icon: 'people' },
+    { path: '/admin/groups', label: 'Groups', icon: 'diagram-3' },
+  ],
+};
+
 @customElement('scion-nav')
 export class ScionNav extends LitElement {
   /**
@@ -140,6 +151,8 @@ export class ScionNav extends LitElement {
 
     .nav-container {
       flex: 1;
+      display: flex;
+      flex-direction: column;
       padding: 1rem 0.75rem;
       overflow-y: auto;
       overflow-x: hidden;
@@ -151,6 +164,12 @@ export class ScionNav extends LitElement {
 
     .nav-section:last-child {
       margin-bottom: 0;
+    }
+
+    .nav-section.admin-section {
+      margin-top: auto;
+      padding-top: 1rem;
+      border-top: 1px solid var(--scion-border, #e2e8f0);
     }
 
     .nav-section-title {
@@ -222,10 +241,11 @@ export class ScionNav extends LitElement {
     :host([collapsed]) .nav-link-text {
       display: none;
     }
-
   `;
 
   override render() {
+    const isAdmin = this.user?.role === 'admin';
+
     return html`
       <div class="logo">
         <div class="logo-icon">S</div>
@@ -259,8 +279,30 @@ export class ScionNav extends LitElement {
             </div>
           `
         )}
+        ${isAdmin
+          ? html`
+              <div class="nav-section admin-section">
+                <div class="nav-section-title">${ADMIN_SECTION.title}</div>
+                <ul class="nav-list">
+                  ${ADMIN_SECTION.items.map(
+                    (item) => html`
+                      <li class="nav-item">
+                        <a
+                          href="${item.path}"
+                          class="nav-link ${this.isActive(item.path) ? 'active' : ''}"
+                          @click=${(e: Event) => this.handleNavClick(e, item.path)}
+                        >
+                          <sl-icon name="${item.icon}"></sl-icon>
+                          <span class="nav-link-text">${item.label}</span>
+                        </a>
+                      </li>
+                    `
+                  )}
+                </ul>
+              </div>
+            `
+          : ''}
       </nav>
-
     `;
   }
 
@@ -287,7 +329,6 @@ export class ScionNav extends LitElement {
       })
     );
   }
-
 }
 
 declare global {

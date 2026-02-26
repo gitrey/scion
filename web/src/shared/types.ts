@@ -19,6 +19,11 @@
  */
 
 /**
+ * User role enumeration
+ */
+export type UserRole = 'admin' | 'member' | 'viewer';
+
+/**
  * User information
  */
 export interface User {
@@ -26,6 +31,57 @@ export interface User {
   email: string;
   name: string;
   avatar?: string | undefined;
+  role?: UserRole | undefined;
+}
+
+/**
+ * Admin user information from the Hub API (GET /api/v1/users)
+ */
+export interface AdminUser {
+  id: string;
+  email: string;
+  displayName: string;
+  avatarUrl?: string;
+  role: UserRole;
+  status: 'active' | 'suspended';
+  created: string;
+  lastLogin?: string;
+}
+
+/**
+ * Group type enumeration
+ */
+export type GroupType = 'explicit' | 'grove_agents';
+
+/**
+ * Group information from the Hub API (GET /api/v1/groups)
+ */
+export interface AdminGroup {
+  id: string;
+  name: string;
+  slug: string;
+  description?: string;
+  groupType: GroupType;
+  groveId?: string;
+  parentId?: string;
+  labels?: Record<string, string>;
+  annotations?: Record<string, string>;
+  ownerId?: string;
+  createdBy?: string;
+  created: string;
+  updated: string;
+}
+
+/**
+ * Group member information
+ */
+export interface GroupMember {
+  groupId: string;
+  memberType: 'user' | 'group' | 'agent';
+  memberId: string;
+  role: 'member' | 'admin' | 'owner';
+  addedAt: string;
+  addedBy?: string;
 }
 
 /**

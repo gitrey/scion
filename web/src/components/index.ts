@@ -36,5 +36,7 @@ export { ScionPageAgentDetail } from './pages/agent-detail.js';
 export { ScionPageAgentCreate } from './pages/agent-create.js';
 export { ScionPageGroveCreate } from './pages/grove-create.js';
 export { ScionPageBrokers } from './pages/brokers.js';
+export { ScionPageAdminUsers } from './pages/admin-users.js';
+export { ScionPageAdminGroups } from './pages/admin-groups.js';
 export { ScionPage404 } from './pages/not-found.js';
 export { ScionLoginPage } from './pages/login.js';

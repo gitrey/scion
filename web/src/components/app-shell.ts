@@ -41,6 +41,8 @@ const PAGE_TITLES: Record<string, string> = {
   '/agents': 'Agents',
   '/brokers': 'Brokers',
   '/settings': 'Settings',
+  '/admin/users': 'Users',
+  '/admin/groups': 'Groups',
 };
 
 @customElement('scion-app')

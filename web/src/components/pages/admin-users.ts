@@ -1,0 +1,466 @@
+/**
+ * Copyright 2026 Google LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/**
+ * Admin Users page component
+ *
+ * Read-only view of all users in the system
+ */
+
+import { LitElement, html, css } from 'lit';
+import { customElement, state } from 'lit/decorators.js';
+
+import type { AdminUser } from '../../shared/types.js';
+import '../shared/status-badge.js';
+
+@customElement('scion-page-admin-users')
+export class ScionPageAdminUsers extends LitElement {
+  @state()
+  private loading = true;
+
+  @state()
+  private users: AdminUser[] = [];
+
+  @state()
+  private error: string | null = null;
+
+  static override styles = css`
+    :host {
+      display: block;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1.5rem;
+    }
+
+    .header h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--scion-text, #1e293b);
+      margin: 0;
+    }
+
+    .user-count {
+      font-size: 0.875rem;
+      color: var(--scion-text-muted, #64748b);
+    }
+
+    .table-container {
+      background: var(--scion-surface, #ffffff);
+      border: 1px solid var(--scion-border, #e2e8f0);
+      border-radius: var(--scion-radius-lg, 0.75rem);
+      overflow: hidden;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    th {
+      text-align: left;
+      padding: 0.75rem 1rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--scion-text-muted, #64748b);
+      background: var(--scion-bg-subtle, #f1f5f9);
+      border-bottom: 1px solid var(--scion-border, #e2e8f0);
+    }
+
+    td {
+      padding: 0.75rem 1rem;
+      font-size: 0.875rem;
+      color: var(--scion-text, #1e293b);
+      border-bottom: 1px solid var(--scion-border, #e2e8f0);
+      vertical-align: middle;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    tr:hover td {
+      background: var(--scion-bg-subtle, #f1f5f9);
+    }
+
+    .user-identity {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .user-avatar {
+      width: 2rem;
+      height: 2rem;
+      border-radius: 50%;
+      background: var(--scion-primary, #3b82f6);
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.75rem;
+      font-weight: 600;
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+
+    .user-avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .user-info {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+
+    .user-name {
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .user-email {
+      font-size: 0.75rem;
+      color: var(--scion-text-muted, #64748b);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .role-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.125rem 0.5rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 500;
+    }
+
+    .role-badge.admin {
+      background: var(--sl-color-warning-100, #fef3c7);
+      color: var(--sl-color-warning-700, #a16207);
+    }
+
+    .role-badge.member {
+      background: var(--sl-color-primary-100, #dbeafe);
+      color: var(--sl-color-primary-700, #1d4ed8);
+    }
+
+    .role-badge.viewer {
+      background: var(--scion-bg-subtle, #f1f5f9);
+      color: var(--scion-text-muted, #64748b);
+    }
+
+    .status-dot {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.375rem;
+      font-size: 0.8125rem;
+    }
+
+    .status-dot::before {
+      content: '';
+      width: 0.5rem;
+      height: 0.5rem;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .status-dot.active::before {
+      background: var(--sl-color-success-500, #22c55e);
+    }
+
+    .status-dot.suspended::before {
+      background: var(--sl-color-danger-500, #ef4444);
+    }
+
+    .meta-text {
+      font-size: 0.8125rem;
+      color: var(--scion-text-muted, #64748b);
+    }
+
+    .id-text {
+      font-family: var(--scion-font-mono, monospace);
+      font-size: 0.75rem;
+      color: var(--scion-text-muted, #64748b);
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 4rem 2rem;
+      background: var(--scion-surface, #ffffff);
+      border: 1px dashed var(--scion-border, #e2e8f0);
+      border-radius: var(--scion-radius-lg, 0.75rem);
+    }
+
+    .empty-state > sl-icon {
+      font-size: 4rem;
+      color: var(--scion-text-muted, #64748b);
+      opacity: 0.5;
+      margin-bottom: 1rem;
+    }
+
+    .empty-state h2 {
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: var(--scion-text, #1e293b);
+      margin: 0 0 0.5rem 0;
+    }
+
+    .empty-state p {
+      color: var(--scion-text-muted, #64748b);
+      margin: 0;
+    }
+
+    .loading-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 4rem 2rem;
+      color: var(--scion-text-muted, #64748b);
+    }
+
+    .loading-state sl-spinner {
+      font-size: 2rem;
+      margin-bottom: 1rem;
+    }
+
+    .error-state {
+      text-align: center;
+      padding: 3rem 2rem;
+      background: var(--scion-surface, #ffffff);
+      border: 1px solid var(--sl-color-danger-200, #fecaca);
+      border-radius: var(--scion-radius-lg, 0.75rem);
+    }
+
+    .error-state sl-icon {
+      font-size: 3rem;
+      color: var(--sl-color-danger-500, #ef4444);
+      margin-bottom: 1rem;
+    }
+
+    .error-state h2 {
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: var(--scion-text, #1e293b);
+      margin: 0 0 0.5rem 0;
+    }
+
+    .error-state p {
+      color: var(--scion-text-muted, #64748b);
+      margin: 0 0 1rem 0;
+    }
+
+    .error-details {
+      font-family: var(--scion-font-mono, monospace);
+      font-size: 0.875rem;
+      background: var(--scion-bg-subtle, #f1f5f9);
+      padding: 0.75rem 1rem;
+      border-radius: var(--scion-radius, 0.5rem);
+      color: var(--sl-color-danger-700, #b91c1c);
+      margin-bottom: 1rem;
+    }
+
+    @media (max-width: 768px) {
+      .hide-mobile {
+        display: none;
+      }
+    }
+  `;
+
+  override connectedCallback(): void {
+    super.connectedCallback();
+    void this.loadUsers();
+  }
+
+  private async loadUsers(): Promise<void> {
+    this.loading = true;
+    this.error = null;
+
+    try {
+      const response = await fetch('/api/v1/users', {
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        const errorData = (await response.json().catch(() => ({}))) as { message?: string };
+        throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data = (await response.json()) as { users?: AdminUser[] } | AdminUser[];
+      this.users = Array.isArray(data) ? data : data.users || [];
+    } catch (err) {
+      console.error('Failed to load users:', err);
+      this.error = err instanceof Error ? err.message : 'Failed to load users';
+    } finally {
+      this.loading = false;
+    }
+  }
+
+  private formatRelativeTime(dateString: string | undefined): string {
+    if (!dateString) return 'Never';
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return 'Never';
+      const diffMs = Date.now() - date.getTime();
+      const diffSeconds = Math.round(diffMs / 1000);
+      const diffMinutes = Math.round(diffMs / (1000 * 60));
+      const diffHours = Math.round(diffMs / (1000 * 60 * 60));
+      const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
+
+      const rtf = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
+
+      if (Math.abs(diffSeconds) < 60) {
+        return rtf.format(-diffSeconds, 'second');
+      } else if (Math.abs(diffMinutes) < 60) {
+        return rtf.format(-diffMinutes, 'minute');
+      } else if (Math.abs(diffHours) < 24) {
+        return rtf.format(-diffHours, 'hour');
+      } else {
+        return rtf.format(-diffDays, 'day');
+      }
+    } catch {
+      return dateString;
+    }
+  }
+
+  private getInitials(name: string): string {
+    return name
+      .split(/\s+/)
+      .map((w) => w[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2);
+  }
+
+  override render() {
+    return html`
+      <div class="header">
+        <h1>Users</h1>
+        ${!this.loading && !this.error
+          ? html`<span class="user-count"
+              >${this.users.length} user${this.users.length !== 1 ? 's' : ''}</span
+            >`
+          : ''}
+      </div>
+
+      ${this.loading ? this.renderLoading() : this.error ? this.renderError() : this.renderUsers()}
+    `;
+  }
+
+  private renderLoading() {
+    return html`
+      <div class="loading-state">
+        <sl-spinner></sl-spinner>
+        <p>Loading users...</p>
+      </div>
+    `;
+  }
+
+  private renderError() {
+    return html`
+      <div class="error-state">
+        <sl-icon name="exclamation-triangle"></sl-icon>
+        <h2>Failed to Load Users</h2>
+        <p>There was a problem connecting to the API.</p>
+        <div class="error-details">${this.error}</div>
+        <sl-button variant="primary" @click=${() => this.loadUsers()}>
+          <sl-icon slot="prefix" name="arrow-clockwise"></sl-icon>
+          Retry
+        </sl-button>
+      </div>
+    `;
+  }
+
+  private renderUsers() {
+    if (this.users.length === 0) {
+      return html`
+        <div class="empty-state">
+          <sl-icon name="people"></sl-icon>
+          <h2>No Users Found</h2>
+          <p>There are no users registered in the system.</p>
+        </div>
+      `;
+    }
+
+    return html`
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>User</th>
+              <th>Role</th>
+              <th>Status</th>
+              <th class="hide-mobile">Last Login</th>
+              <th class="hide-mobile">Created</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${this.users.map((user) => this.renderUserRow(user))}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  private renderUserRow(user: AdminUser) {
+    return html`
+      <tr>
+        <td>
+          <div class="user-identity">
+            <div class="user-avatar">
+              ${user.avatarUrl
+                ? html`<img src="${user.avatarUrl}" alt="${user.displayName}" />`
+                : this.getInitials(user.displayName || user.email)}
+            </div>
+            <div class="user-info">
+              <span class="user-name">${user.displayName || user.email}</span>
+              <span class="user-email">${user.email}</span>
+            </div>
+          </div>
+        </td>
+        <td>
+          <span class="role-badge ${user.role}">${user.role}</span>
+        </td>
+        <td>
+          <span class="status-dot ${user.status}">${user.status}</span>
+        </td>
+        <td class="hide-mobile">
+          <span class="meta-text">${this.formatRelativeTime(user.lastLogin)}</span>
+        </td>
+        <td class="hide-mobile">
+          <span class="meta-text">${this.formatRelativeTime(user.created)}</span>
+        </td>
+      </tr>
+    `;
+  }
+}
+
+declare global {
+  interface HTMLElementTagNameMap {
+    'scion-page-admin-users': ScionPageAdminUsers;
+  }
+}

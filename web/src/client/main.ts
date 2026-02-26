@@ -67,6 +67,8 @@ import '../components/pages/agent-create.js';
 import '../components/pages/grove-create.js';
 import '../components/pages/terminal.js';
 import '../components/pages/brokers.js';
+import '../components/pages/admin-users.js';
+import '../components/pages/admin-groups.js';
 import '../components/pages/not-found.js';
 import '../components/pages/login.js';
 
@@ -87,6 +89,7 @@ async function fetchCurrentUser(): Promise<User | null> {
       email: data.email,
       name: data.displayName || data.name || '',
       avatar: data.avatarUrl || data.avatar,
+      role: data.role || undefined,
     };
   } catch {
     return null;
@@ -102,6 +105,8 @@ const ROUTES: { pattern: RegExp; tag: string }[] = [
   { pattern: /^\/groves$/, tag: 'scion-page-groves' },
   { pattern: /^\/agents$/, tag: 'scion-page-agents' },
   { pattern: /^\/brokers$/, tag: 'scion-page-brokers' },
+  { pattern: /^\/admin\/users$/, tag: 'scion-page-admin-users' },
+  { pattern: /^\/admin\/groups$/, tag: 'scion-page-admin-groups' },
   { pattern: /^\/groves\/new$/, tag: 'scion-page-grove-create' },
   { pattern: /^\/groves\/[^/]+$/, tag: 'scion-page-grove-detail' },
   { pattern: /^\/agents\/new$/, tag: 'scion-page-agent-create' },
@@ -161,6 +166,8 @@ async function init(): Promise<void> {
     customElements.whenDefined('scion-page-agent-create'),
     customElements.whenDefined('scion-page-terminal'),
     customElements.whenDefined('scion-page-brokers'),
+    customElements.whenDefined('scion-page-admin-users'),
+    customElements.whenDefined('scion-page-admin-groups'),
     customElements.whenDefined('scion-page-404'),
     customElements.whenDefined('scion-login-page'),
   ]);
@@ -229,7 +236,10 @@ function renderRoute(path: string): void {
     appContainer.appendChild(page);
   } else {
     // Wrapped pages render inside the app shell
-    const shell = document.createElement('scion-app') as HTMLElement & { currentPath: string; user: User | null };
+    const shell = document.createElement('scion-app') as HTMLElement & {
+      currentPath: string;
+      user: User | null;
+    };
     shell.currentPath = path;
     shell.user = currentUser;
     const page = document.createElement(tag);
