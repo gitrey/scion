@@ -996,6 +996,80 @@ func TestHTTPAgentDispatcher_DispatchAgentStart_WithGroveProviderPath(t *testing
 	}
 }
 
+// TestHTTPAgentDispatcher_DispatchAgentStart_IncludesAgentIdentity verifies that
+// DispatchAgentStart injects SCION_AGENT_ID and SCION_AGENT_SLUG into resolvedEnv
+// so the container can report status back to the Hub.
+func TestHTTPAgentDispatcher_DispatchAgentStart_IncludesAgentIdentity(t *testing.T) {
+	ctx := context.Background()
+	memStore := createTestStore(t)
+
+	grove := &store.Grove{
+		ID:        "grove-1",
+		Name:      "test-grove",
+		Slug:      "test-grove",
+		GitRemote: "https://github.com/example/repo.git",
+	}
+	if err := memStore.CreateGrove(ctx, grove); err != nil {
+		t.Fatalf("failed to create grove: %v", err)
+	}
+
+	broker := &store.RuntimeBroker{
+		ID:       "broker-1",
+		Name:     "test-broker",
+		Slug:     "test-broker",
+		Endpoint: "http://localhost:9800",
+		Status:   store.BrokerStatusOnline,
+	}
+	if err := memStore.CreateRuntimeBroker(ctx, broker); err != nil {
+		t.Fatalf("failed to create runtime broker: %v", err)
+	}
+
+	provider := &store.GroveProvider{
+		GroveID:    "grove-1",
+		BrokerID:   "broker-1",
+		BrokerName: "test-broker",
+		LocalPath:  "/home/user/projects/myproject/.scion",
+		Status:     store.BrokerStatusOnline,
+	}
+	if err := memStore.AddGroveProvider(ctx, provider); err != nil {
+		t.Fatalf("failed to add grove provider: %v", err)
+	}
+
+	mockClient := &mockRuntimeBrokerClient{}
+	dispatcher := NewHTTPAgentDispatcherWithClient(memStore, mockClient, false)
+
+	agent := &store.Agent{
+		ID:              "agent-uuid-123",
+		Name:            "test-agent",
+		Slug:            "test-agent-slug",
+		GroveID:         "grove-1",
+		RuntimeBrokerID: "broker-1",
+	}
+
+	err := dispatcher.DispatchAgentStart(ctx, agent, "")
+	if err != nil {
+		t.Fatalf("DispatchAgentStart failed: %v", err)
+	}
+
+	if !mockClient.startCalled {
+		t.Fatal("expected StartAgent to be called")
+	}
+
+	// Verify SCION_AGENT_ID is included in resolvedEnv
+	if v, ok := mockClient.lastResolvedEnv["SCION_AGENT_ID"]; !ok {
+		t.Error("expected SCION_AGENT_ID in resolvedEnv, but not found")
+	} else if v != "agent-uuid-123" {
+		t.Errorf("expected SCION_AGENT_ID='agent-uuid-123', got %q", v)
+	}
+
+	// Verify SCION_AGENT_SLUG is included in resolvedEnv
+	if v, ok := mockClient.lastResolvedEnv["SCION_AGENT_SLUG"]; !ok {
+		t.Error("expected SCION_AGENT_SLUG in resolvedEnv, but not found")
+	} else if v != "test-agent-slug" {
+		t.Errorf("expected SCION_AGENT_SLUG='test-agent-slug', got %q", v)
+	}
+}
+
 func TestHTTPAgentDispatcher_DispatchAgentStart_HubNativeGrove(t *testing.T) {
 	ctx := context.Background()
 	memStore := createTestStore(t)

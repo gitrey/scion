@@ -1084,6 +1084,16 @@ func (d *HTTPAgentDispatcher) DispatchAgentStart(ctx context.Context, agent *sto
 		}
 	}
 
+	// Include agent identity so the container can report status to the Hub.
+	// The createAgent path sets SCION_AGENT_ID via the request body, but the
+	// startAgent path on the broker doesn't — so we inject it here.
+	if agent.ID != "" {
+		resolvedEnv["SCION_AGENT_ID"] = agent.ID
+	}
+	if agent.Slug != "" {
+		resolvedEnv["SCION_AGENT_SLUG"] = agent.Slug
+	}
+
 	// Generate a fresh agent token for Hub authentication
 	if d.tokenGenerator != nil {
 		var additionalScopes []AgentTokenScope
