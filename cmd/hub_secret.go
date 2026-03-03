@@ -32,7 +32,7 @@ import (
 var (
 	secretGroveScope  string
 	secretBrokerScope string
-	secretHubScope    bool
+	secretScope       string
 	secretOutputJSON  bool
 	secretType        string
 	secretTarget      string
@@ -59,6 +59,9 @@ Secrets are resolved hierarchically when an agent starts:
 Examples:
   # Set a user-scoped secret
   scion hub secret set ANTHROPIC_API_KEY sk-...
+
+  # Set a hub-scoped secret
+  scion hub secret set --scope hub ANTHROPIC_API_KEY sk-...
 
   # Set a grove-scoped secret (infer grove from current directory)
   scion hub secret set --grove DATABASE_PASSWORD mypassword
@@ -95,6 +98,7 @@ For file secrets, prefix the value with @ to read from a file:
 
 Examples:
   scion hub secret set API_KEY sk-abc123
+  scion hub secret set --scope hub API_KEY sk-abc123
   scion hub secret set --grove DATABASE_PASSWORD mypassword
   scion hub secret set --type variable CONFIG_JSON '{"key":"val"}'
   scion hub secret set --type file --target /home/scion/.ssh/id_rsa SSH_KEY @~/.ssh/id_rsa`,
@@ -165,10 +169,11 @@ func init() {
 	hubSecretCmd.AddCommand(hubSecretClearCmd)
 
 	// Add scope flags to all subcommands.
-	// NoOptDefVal allows bare --grove/--broker (no value) to infer from settings,
-	// while --grove=<name> or --broker=<name> accepts an explicit name or ID.
+	// --scope selects the scope level (hub, user). --grove/--broker select their
+	// respective scopes and support both bare usage (infer from settings) and
+	// explicit name/ID via --grove=<name|id>.
 	for _, cmd := range []*cobra.Command{hubSecretSetCmd, hubSecretGetCmd, hubSecretListCmd, hubSecretClearCmd} {
-		cmd.Flags().BoolVar(&secretHubScope, "hub", false, "Hub scope (applies to all agents hub-wide, admin-only writes)")
+		cmd.Flags().StringVar(&secretScope, "scope", "", "Scope level: hub, user (default: user)")
 		cmd.Flags().StringVar(&secretGroveScope, "grove", "", "Grove scope (bare flag infers current grove, or use --grove=<name|id>)")
 		cmd.Flags().Lookup("grove").NoOptDefVal = scopeInferSentinel
 		cmd.Flags().StringVar(&secretBrokerScope, "broker", "", "Broker scope (bare flag infers current broker, or use --broker=<name|id>)")
@@ -188,13 +193,13 @@ func init() {
 // When a value is provided, it is returned as-is and may need further resolution
 // (name/slug to UUID) via resolveScopeID.
 func resolveSecretScope(cmd *cobra.Command, settings *config.Settings) (scope, scopeID string, err error) {
-	hubSet := cmd.Flags().Changed("hub")
+	scopeSet := cmd.Flags().Changed("scope")
 	groveSet := cmd.Flags().Changed("grove")
 	brokerSet := cmd.Flags().Changed("broker")
 
 	// Enforce mutual exclusivity
 	setCount := 0
-	if hubSet {
+	if scopeSet {
 		setCount++
 	}
 	if groveSet {
@@ -204,11 +209,18 @@ func resolveSecretScope(cmd *cobra.Command, settings *config.Settings) (scope, s
 		setCount++
 	}
 	if setCount > 1 {
-		return "", "", fmt.Errorf("cannot specify more than one of --hub, --grove, and --broker")
+		return "", "", fmt.Errorf("cannot specify more than one of --scope, --grove, and --broker")
 	}
 
-	if hubSet {
-		return "hub", "", nil
+	if scopeSet {
+		switch secretScope {
+		case "hub":
+			return "hub", "", nil
+		case "user", "":
+			return "user", "", nil
+		default:
+			return "", "", fmt.Errorf("invalid --scope value %q: must be 'hub' or 'user'", secretScope)
+		}
 	}
 
 	if groveSet {

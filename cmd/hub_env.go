@@ -35,7 +35,7 @@ const scopeInferSentinel = "\x00"
 var (
 	envGroveScope  string
 	envBrokerScope string
-	envHubScope    bool
+	envScope       string
 	envOutputJSON  bool
 	envAlways      bool
 	envAsNeeded    bool
@@ -157,10 +157,11 @@ func init() {
 	hubEnvCmd.AddCommand(hubEnvClearCmd)
 
 	// Add scope flags to all subcommands.
-	// NoOptDefVal allows bare --grove/--broker (no value) to infer from settings,
-	// while --grove=<name> or --broker=<name> accepts an explicit name or ID.
+	// --scope selects the scope level (hub, user). --grove/--broker select their
+	// respective scopes and support both bare usage (infer from settings) and
+	// explicit name/ID via --grove=<name|id>.
 	for _, cmd := range []*cobra.Command{hubEnvSetCmd, hubEnvGetCmd, hubEnvListCmd, hubEnvClearCmd} {
-		cmd.Flags().BoolVar(&envHubScope, "hub", false, "Hub scope (applies to all agents hub-wide, admin-only writes)")
+		cmd.Flags().StringVar(&envScope, "scope", "", "Scope level: hub, user (default: user)")
 		cmd.Flags().StringVar(&envGroveScope, "grove", "", "Grove scope (bare flag infers current grove, or use --grove=<name|id>)")
 		cmd.Flags().Lookup("grove").NoOptDefVal = scopeInferSentinel
 		cmd.Flags().StringVar(&envBrokerScope, "broker", "", "Broker scope (bare flag infers current broker, or use --broker=<name|id>)")
@@ -181,13 +182,13 @@ func init() {
 // When a value is provided, it is returned as-is and may need further resolution
 // (name/slug to UUID) via resolveScopeID.
 func resolveEnvScope(cmd *cobra.Command, settings *config.Settings) (scope, scopeID string, err error) {
-	hubSet := cmd.Flags().Changed("hub")
+	scopeSet := cmd.Flags().Changed("scope")
 	groveSet := cmd.Flags().Changed("grove")
 	brokerSet := cmd.Flags().Changed("broker")
 
 	// Enforce mutual exclusivity
 	setCount := 0
-	if hubSet {
+	if scopeSet {
 		setCount++
 	}
 	if groveSet {
@@ -197,11 +198,18 @@ func resolveEnvScope(cmd *cobra.Command, settings *config.Settings) (scope, scop
 		setCount++
 	}
 	if setCount > 1 {
-		return "", "", fmt.Errorf("cannot specify more than one of --hub, --grove, and --broker")
+		return "", "", fmt.Errorf("cannot specify more than one of --scope, --grove, and --broker")
 	}
 
-	if hubSet {
-		return "hub", "", nil
+	if scopeSet {
+		switch envScope {
+		case "hub":
+			return "hub", "", nil
+		case "user", "":
+			return "user", "", nil
+		default:
+			return "", "", fmt.Errorf("invalid --scope value %q: must be 'hub' or 'user'", envScope)
+		}
 	}
 
 	if groveSet {

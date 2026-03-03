@@ -34,6 +34,7 @@ type secretTestState struct {
 	grovePath         string
 	secretGroveScope  string
 	secretBrokerScope string
+	secretScope       string
 	secretOutputJSON  bool
 }
 
@@ -43,6 +44,7 @@ func saveSecretTestState() secretTestState {
 		grovePath:         grovePath,
 		secretGroveScope:  secretGroveScope,
 		secretBrokerScope: secretBrokerScope,
+		secretScope:       secretScope,
 		secretOutputJSON:  secretOutputJSON,
 	}
 }
@@ -52,6 +54,7 @@ func (s secretTestState) restore() {
 	grovePath = s.grovePath
 	secretGroveScope = s.secretGroveScope
 	secretBrokerScope = s.secretBrokerScope
+	secretScope = s.secretScope
 	secretOutputJSON = s.secretOutputJSON
 }
 
@@ -203,19 +206,19 @@ func TestRunSecretList_JSON(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-func TestResolveSecretScope_HubFlag(t *testing.T) {
+func TestResolveSecretScope_ScopeHub(t *testing.T) {
 	orig := saveSecretTestState()
 	defer orig.restore()
 
 	testCmd := &cobra.Command{Use: "test"}
-	testCmd.Flags().BoolVar(&secretHubScope, "hub", false, "")
+	testCmd.Flags().StringVar(&secretScope, "scope", "", "")
 	testCmd.Flags().StringVar(&secretGroveScope, "grove", "", "")
 	testCmd.Flags().Lookup("grove").NoOptDefVal = scopeInferSentinel
 	testCmd.Flags().StringVar(&secretBrokerScope, "broker", "", "")
 	testCmd.Flags().Lookup("broker").NoOptDefVal = scopeInferSentinel
 
-	// Set --hub
-	testCmd.Flags().Set("hub", "true")
+	// Set --scope hub
+	testCmd.Flags().Set("scope", "hub")
 
 	tmpHome := t.TempDir()
 	os.Setenv("HOME", tmpHome)
@@ -231,19 +234,19 @@ func TestResolveSecretScope_HubFlag(t *testing.T) {
 	assert.Equal(t, "", scopeID, "hub scope should return empty scopeID (server resolves it)")
 }
 
-func TestResolveSecretScope_HubConflictsWithGrove(t *testing.T) {
+func TestResolveSecretScope_ScopeConflictsWithGrove(t *testing.T) {
 	orig := saveSecretTestState()
 	defer orig.restore()
 
 	testCmd := &cobra.Command{Use: "test"}
-	testCmd.Flags().BoolVar(&secretHubScope, "hub", false, "")
+	testCmd.Flags().StringVar(&secretScope, "scope", "", "")
 	testCmd.Flags().StringVar(&secretGroveScope, "grove", "", "")
 	testCmd.Flags().Lookup("grove").NoOptDefVal = scopeInferSentinel
 	testCmd.Flags().StringVar(&secretBrokerScope, "broker", "", "")
 	testCmd.Flags().Lookup("broker").NoOptDefVal = scopeInferSentinel
 
-	// Set both --hub and --grove
-	testCmd.Flags().Set("hub", "true")
+	// Set both --scope and --grove
+	testCmd.Flags().Set("scope", "hub")
 	testCmd.Flags().Set("grove", "some-grove")
 
 	tmpHome := t.TempDir()
@@ -259,19 +262,19 @@ func TestResolveSecretScope_HubConflictsWithGrove(t *testing.T) {
 	assert.Contains(t, err.Error(), "cannot specify more than one")
 }
 
-func TestResolveSecretScope_HubConflictsWithBroker(t *testing.T) {
+func TestResolveSecretScope_ScopeConflictsWithBroker(t *testing.T) {
 	orig := saveSecretTestState()
 	defer orig.restore()
 
 	testCmd := &cobra.Command{Use: "test"}
-	testCmd.Flags().BoolVar(&secretHubScope, "hub", false, "")
+	testCmd.Flags().StringVar(&secretScope, "scope", "", "")
 	testCmd.Flags().StringVar(&secretGroveScope, "grove", "", "")
 	testCmd.Flags().Lookup("grove").NoOptDefVal = scopeInferSentinel
 	testCmd.Flags().StringVar(&secretBrokerScope, "broker", "", "")
 	testCmd.Flags().Lookup("broker").NoOptDefVal = scopeInferSentinel
 
-	// Set both --hub and --broker
-	testCmd.Flags().Set("hub", "true")
+	// Set both --scope and --broker
+	testCmd.Flags().Set("scope", "hub")
 	testCmd.Flags().Set("broker", "some-broker")
 
 	tmpHome := t.TempDir()
@@ -287,10 +290,10 @@ func TestResolveSecretScope_HubConflictsWithBroker(t *testing.T) {
 	assert.Contains(t, err.Error(), "cannot specify more than one")
 }
 
-func TestHubSecretListCmd_HubFlag(t *testing.T) {
-	// Verify the --hub flag is registered on all secret subcommands.
+func TestHubSecretListCmd_ScopeFlag(t *testing.T) {
+	// Verify the --scope flag is registered on all secret subcommands.
 	for _, cmd := range []*cobra.Command{hubSecretSetCmd, hubSecretGetCmd, hubSecretListCmd, hubSecretClearCmd} {
-		f := cmd.Flags().Lookup("hub")
-		assert.NotNil(t, f, "%s command should have --hub flag", cmd.Use)
+		f := cmd.Flags().Lookup("scope")
+		assert.NotNil(t, f, "%s command should have --scope flag", cmd.Use)
 	}
 }
