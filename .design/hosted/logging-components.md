@@ -106,6 +106,8 @@ Standard CRUD operations with straightforward request/response patterns.
 
 ## Implementation Approach
 
+Decision: Option A
+
 ### Option A: Subsystem Logger Injection (Recommended)
 
 Create child loggers with the subsystem attribute and pass them to subsystem constructors or store them on structs.
@@ -177,6 +179,7 @@ var log = logging.Subsystem("hub.notifications")
 ### Option C: Hybrid
 
 Use Option B for quick adoption in handlers (where loggers aren't struct fields), and Option A for long-lived subsystems like dispatchers and background goroutines that already have struct fields.
+
 
 ---
 

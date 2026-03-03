@@ -57,6 +57,7 @@ type HeartbeatService struct {
 	manager     agent.Manager
 	version     string
 	groveFilter func(groveID string) bool // returns true if this grove belongs to this hub
+	log         *slog.Logger
 
 	mu     sync.Mutex
 	stopCh chan struct{}
@@ -67,7 +68,7 @@ type HeartbeatService struct {
 // The client must be an authenticated hubclient.RuntimeBrokerService.
 // The manager is used to gather agent status information.
 // The groveFilter, if non-nil, restricts which groves are included in heartbeats.
-func NewHeartbeatService(client hubclient.RuntimeBrokerService, brokerID string, interval time.Duration, manager agent.Manager, groveFilter func(string) bool) *HeartbeatService {
+func NewHeartbeatService(client hubclient.RuntimeBrokerService, brokerID string, interval time.Duration, manager agent.Manager, groveFilter func(string) bool, log *slog.Logger) *HeartbeatService {
 	if interval < MinHeartbeatInterval {
 		interval = MinHeartbeatInterval
 	}
@@ -78,6 +79,7 @@ func NewHeartbeatService(client hubclient.RuntimeBrokerService, brokerID string,
 		interval:    interval,
 		manager:     manager,
 		groveFilter: groveFilter,
+		log:         log,
 	}
 }
 
@@ -135,9 +137,9 @@ func (s *HeartbeatService) run(ctx context.Context) {
 
 	// Send initial heartbeat immediately
 	if err := s.sendHeartbeat(ctx); err != nil {
-		slog.Error("Initial heartbeat failed", "error", err)
+		s.log.Error("Initial heartbeat failed", "error", err)
 	} else {
-		slog.Info("Initial heartbeat sent to Hub")
+		s.log.Info("Initial heartbeat sent to Hub")
 	}
 
 	ticker := time.NewTicker(s.interval)
@@ -147,13 +149,13 @@ func (s *HeartbeatService) run(ctx context.Context) {
 		select {
 		case <-ticker.C:
 			if err := s.sendHeartbeat(ctx); err != nil {
-				slog.Error("Failed to send heartbeat", "error", err)
+				s.log.Error("Failed to send heartbeat", "error", err)
 			}
 		case <-s.stopCh:
-			slog.Info("Heartbeat service stopping")
+			s.log.Info("Heartbeat service stopping")
 			return
 		case <-ctx.Done():
-			slog.Info("Heartbeat service context cancelled")
+			s.log.Info("Heartbeat service context cancelled")
 			return
 		}
 	}
@@ -193,7 +195,7 @@ func (s *HeartbeatService) gatherGroveAgents() []hubclient.GroveHeartbeat {
 	// List all agents managed by this broker
 	agents, err := s.manager.List(context.Background(), nil)
 	if err != nil {
-		slog.Error("Failed to list agents for heartbeat", "error", err)
+		s.log.Error("Failed to list agents for heartbeat", "error", err)
 		return nil
 	}
 

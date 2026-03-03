@@ -63,15 +63,17 @@ type ControlChannelManager struct {
 	connections  map[string]*BrokerConnection // brokerID -> connection
 	mu           sync.RWMutex
 	config       ControlChannelConfig
+	log          *slog.Logger
 	upgrader     websocket.Upgrader
 	onDisconnect func(brokerID string)
 }
 
 // NewControlChannelManager creates a new control channel manager.
-func NewControlChannelManager(config ControlChannelConfig) *ControlChannelManager {
+func NewControlChannelManager(config ControlChannelConfig, log *slog.Logger) *ControlChannelManager {
 	return &ControlChannelManager{
 		connections: make(map[string]*BrokerConnection),
 		config:      config,
+		log:         log,
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  4096,
 			WriteBufferSize: 4096,
@@ -220,7 +222,7 @@ func (m *ControlChannelManager) HandleUpgrade(w http.ResponseWriter, r *http.Req
 	m.connections[brokerID] = brokerConn
 	m.mu.Unlock()
 
-	slog.Info("Broker control channel connected", "brokerID", brokerID, "sessionID", sessionID)
+	m.log.Info("Broker control channel connected", "brokerID", brokerID, "sessionID", sessionID)
 
 	// Start message handler
 	go m.handleConnection(brokerConn)
@@ -228,7 +230,7 @@ func (m *ControlChannelManager) HandleUpgrade(w http.ResponseWriter, r *http.Req
 	// Send connected message
 	connectedMsg := wsprotocol.NewConnectedMessage(brokerID, sessionID, int(m.config.PingInterval.Milliseconds()))
 	if err := wsConn.WriteJSON(connectedMsg); err != nil {
-		slog.Error("Failed to send connected message", "brokerID", brokerID, "error", err)
+		m.log.Error("Failed to send connected message", "brokerID", brokerID, "error", err)
 		brokerConn.Close()
 		m.removeConnection(brokerID)
 		return err
@@ -242,7 +244,7 @@ func (m *ControlChannelManager) handleConnection(hc *BrokerConnection) {
 	defer func() {
 		hc.Close()
 		m.removeConnection(hc.brokerID)
-		slog.Info("Broker control channel disconnected", "brokerID", hc.brokerID)
+		m.log.Info("Broker control channel disconnected", "brokerID", hc.brokerID)
 	}()
 
 	// Set up pong handler
@@ -259,7 +261,7 @@ func (m *ControlChannelManager) handleConnection(hc *BrokerConnection) {
 
 	// Set initial read deadline
 	if err := hc.conn.SetReadDeadline(time.Now().Add(m.config.PongWait)); err != nil {
-		slog.Error("Failed to set read deadline", "brokerID", hc.brokerID, "error", err)
+		m.log.Error("Failed to set read deadline", "brokerID", hc.brokerID, "error", err)
 		return
 	}
 
@@ -273,13 +275,13 @@ func (m *ControlChannelManager) handleConnection(hc *BrokerConnection) {
 		_, data, err := hc.conn.ReadMessage()
 		if err != nil {
 			if wsprotocol.IsUnexpectedCloseError(err, wsprotocol.CloseGoingAway, wsprotocol.CloseNormalClosure) {
-				slog.Error("Control channel read error", "brokerID", hc.brokerID, "error", err)
+				m.log.Error("Control channel read error", "brokerID", hc.brokerID, "error", err)
 			}
 			return
 		}
 
 		if err := m.handleMessage(hc, data); err != nil {
-			slog.Error("Control channel message handling error", "brokerID", hc.brokerID, "error", err)
+			m.log.Error("Control channel message handling error", "brokerID", hc.brokerID, "error", err)
 		}
 	}
 }
@@ -296,7 +298,7 @@ func (m *ControlChannelManager) handleMessage(hc *BrokerConnection, data []byte)
 		// Client sent connect message after we already sent connected.
 		// This is expected - just acknowledge we received it.
 		if m.config.Debug {
-			slog.Debug("Received connect message from broker (already connected)", "brokerID", hc.brokerID)
+			m.log.Debug("Received connect message from broker (already connected)", "brokerID", hc.brokerID)
 		}
 		return nil
 	case wsprotocol.TypeResponse:
@@ -312,7 +314,7 @@ func (m *ControlChannelManager) handleMessage(hc *BrokerConnection, data []byte)
 		return nil
 	default:
 		if m.config.Debug {
-			slog.Debug("Unknown message type from broker", "brokerID", hc.brokerID, "type", env.Type)
+			m.log.Debug("Unknown message type from broker", "brokerID", hc.brokerID, "type", env.Type)
 		}
 		return nil
 	}
@@ -331,7 +333,7 @@ func (m *ControlChannelManager) handleResponse(hc *BrokerConnection, data []byte
 
 	if !ok {
 		if m.config.Debug {
-			slog.Debug("Response for unknown request", "requestID", resp.RequestID)
+			m.log.Debug("Response for unknown request", "requestID", resp.RequestID)
 		}
 		return nil
 	}
@@ -339,7 +341,7 @@ func (m *ControlChannelManager) handleResponse(hc *BrokerConnection, data []byte
 	select {
 	case ch <- &resp:
 	default:
-		slog.Warn("Response channel full", "requestID", resp.RequestID)
+		m.log.Warn("Response channel full", "requestID", resp.RequestID)
 	}
 
 	return nil
@@ -358,7 +360,7 @@ func (m *ControlChannelManager) handleStreamData(hc *BrokerConnection, data []by
 
 	if !ok {
 		if m.config.Debug {
-			slog.Debug("Data for unknown stream", "streamID", frame.StreamID)
+			m.log.Debug("Data for unknown stream", "streamID", frame.StreamID)
 		}
 		return nil
 	}
@@ -385,7 +387,7 @@ func (m *ControlChannelManager) handleStreamClose(hc *BrokerConnection, data []b
 	}
 
 	if m.config.Debug {
-		slog.Debug("Control channel stream closed", "streamID", close.StreamID, "reason", close.Reason)
+		m.log.Debug("Control channel stream closed", "streamID", close.StreamID, "reason", close.Reason)
 	}
 
 	return nil
@@ -403,16 +405,16 @@ func (m *ControlChannelManager) handleEvent(hc *BrokerConnection, data []byte) e
 		// Update last activity time
 		hc.lastPongAt = time.Now()
 		if m.config.Debug {
-			slog.Debug("Control channel heartbeat from broker", "brokerID", hc.brokerID)
+			m.log.Debug("Control channel heartbeat from broker", "brokerID", hc.brokerID)
 		}
 	case wsprotocol.EventAgentStatus:
 		// TODO: Forward to interested clients
 		if m.config.Debug {
-			slog.Debug("Agent status update via control channel", "brokerID", hc.brokerID)
+			m.log.Debug("Agent status update via control channel", "brokerID", hc.brokerID)
 		}
 	default:
 		if m.config.Debug {
-			slog.Debug("Unknown control channel event", "brokerID", hc.brokerID, "event", event.Event)
+			m.log.Debug("Unknown control channel event", "brokerID", hc.brokerID, "event", event.Event)
 		}
 	}
 
@@ -431,7 +433,7 @@ func (m *ControlChannelManager) pingLoop(hc *BrokerConnection) {
 		case <-ticker.C:
 			hc.lastPingAt = time.Now()
 			if err := hc.conn.WritePing(); err != nil {
-				slog.Error("Failed to ping broker", "brokerID", hc.brokerID, "error", err)
+				m.log.Error("Failed to ping broker", "brokerID", hc.brokerID, "error", err)
 				hc.cancel()
 				return
 			}

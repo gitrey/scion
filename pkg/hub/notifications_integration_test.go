@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -90,7 +91,7 @@ func setupIntegrationTest(t *testing.T) *integrationTestEnv {
 	require.NoError(t, s.UpdateGrove(ctx, grove))
 
 	// Create and start the notification dispatcher
-	nd := NewNotificationDispatcher(s, pub, func() AgentDispatcher { return recorder })
+	nd := NewNotificationDispatcher(s, pub, func() AgentDispatcher { return recorder }, slog.Default())
 	nd.Start()
 	t.Cleanup(func() { nd.Stop() })
 

@@ -50,6 +50,28 @@ func TestGCPHandler(t *testing.T) {
 	}
 }
 
+func TestSubsystemLogger(t *testing.T) {
+	// Set up a JSON handler writing to a buffer so we can inspect output
+	var buf bytes.Buffer
+	opts := &slog.HandlerOptions{Level: slog.LevelInfo}
+	handler := slog.NewJSONHandler(&buf, opts).WithAttrs([]slog.Attr{
+		slog.String(AttrComponent, "test-component"),
+	})
+	slog.SetDefault(slog.New(handler))
+	defer slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+
+	logger := Subsystem("hub.notifications")
+	logger.Info("test subsystem message")
+
+	var data map[string]interface{}
+	err := json.Unmarshal(buf.Bytes(), &data)
+	assert.NoError(t, err)
+
+	assert.Equal(t, "test-component", data[AttrComponent])
+	assert.Equal(t, "hub.notifications", data[AttrSubsystem])
+	assert.Equal(t, "test subsystem message", data["msg"])
+}
+
 func TestGCPHandlerSourceLocation(t *testing.T) {
 	var buf bytes.Buffer
 	opts := &slog.HandlerOptions{Level: slog.LevelInfo, AddSource: true}

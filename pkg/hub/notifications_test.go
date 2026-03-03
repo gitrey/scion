@@ -19,6 +19,7 @@ package hub
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sync"
 	"testing"
 	"time"
@@ -167,7 +168,7 @@ func setupNotificationTest(t *testing.T) *notificationTestEnv {
 	}
 	require.NoError(t, s.CreateNotificationSubscription(ctx, sub))
 
-	nd := NewNotificationDispatcher(s, pub, func() AgentDispatcher { return dispatcher })
+	nd := NewNotificationDispatcher(s, pub, func() AgentDispatcher { return dispatcher }, slog.Default())
 
 	return &notificationTestEnv{
 		store:      s,

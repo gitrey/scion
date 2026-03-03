@@ -22,19 +22,21 @@ import (
 	"testing"
 	"time"
 
+	"log/slog"
+
 	"github.com/ptone/scion-agent/pkg/store"
 )
 
 // newTestScheduler creates a scheduler with a fast tick interval for testing.
 func newTestScheduler(interval time.Duration) *Scheduler {
-	s := NewScheduler(nil)
+	s := NewScheduler(nil, slog.Default())
 	s.tickInterval = interval
 	return s
 }
 
 // newTestSchedulerWithStore creates a scheduler with a mock store and fast tick interval.
 func newTestSchedulerWithStore(interval time.Duration, st store.Store) *Scheduler {
-	s := NewScheduler(st)
+	s := NewScheduler(st, slog.Default())
 	s.tickInterval = interval
 	return s
 }

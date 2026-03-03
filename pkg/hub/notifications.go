@@ -34,6 +34,7 @@ type NotificationDispatcher struct {
 	store         store.Store
 	events        *ChannelEventPublisher
 	getDispatcher func() AgentDispatcher // lazy getter; dispatcher may be set after startup
+	log           *slog.Logger
 	stopCh        chan struct{}
 	stopOnce      sync.Once
 }
@@ -42,11 +43,12 @@ type NotificationDispatcher struct {
 // The getDispatcher function is called at dispatch time to resolve the current
 // AgentDispatcher, allowing the dispatcher to be set up after the notification
 // system starts (e.g. in combined hub+web mode).
-func NewNotificationDispatcher(s store.Store, events *ChannelEventPublisher, getDispatcher func() AgentDispatcher) *NotificationDispatcher {
+func NewNotificationDispatcher(s store.Store, events *ChannelEventPublisher, getDispatcher func() AgentDispatcher, log *slog.Logger) *NotificationDispatcher {
 	return &NotificationDispatcher{
 		store:         s,
 		events:        events,
 		getDispatcher: getDispatcher,
+		log:           log,
 		stopCh:        make(chan struct{}),
 	}
 }
@@ -70,14 +72,14 @@ func (nd *NotificationDispatcher) Start() {
 		}
 	}()
 
-	slog.Info("Notification dispatcher started")
+	nd.log.Info("Notification dispatcher started")
 }
 
 // Stop signals the dispatcher goroutine to exit. It is safe to call multiple times.
 func (nd *NotificationDispatcher) Stop() {
 	nd.stopOnce.Do(func() {
 		close(nd.stopCh)
-		slog.Info("Notification dispatcher stopped")
+		nd.log.Info("Notification dispatcher stopped")
 	})
 }
 
@@ -85,18 +87,18 @@ func (nd *NotificationDispatcher) Stop() {
 func (nd *NotificationDispatcher) handleEvent(evt Event) {
 	var statusEvt AgentStatusEvent
 	if err := json.Unmarshal(evt.Data, &statusEvt); err != nil {
-		slog.Error("Failed to unmarshal agent status event", "error", err)
+		nd.log.Error("Failed to unmarshal agent status event", "error", err)
 		return
 	}
 
 	ctx := context.Background()
 
-	slog.Debug("Notification dispatcher received event",
+	nd.log.Debug("Notification dispatcher received event",
 		"agentID", statusEvt.AgentID, "activity", statusEvt.Activity, "phase", statusEvt.Phase)
 
 	subs, err := nd.store.GetNotificationSubscriptions(ctx, statusEvt.AgentID)
 	if err != nil {
-		slog.Error("Failed to get notification subscriptions",
+		nd.log.Error("Failed to get notification subscriptions",
 			"agentID", statusEvt.AgentID, "error", err)
 		return
 	}
@@ -107,7 +109,7 @@ func (nd *NotificationDispatcher) handleEvent(evt Event) {
 	// Use activity for matching (notifications trigger on activity changes)
 	matchStatus := statusEvt.Activity
 
-	slog.Debug("Notification dispatcher checking subscriptions",
+	nd.log.Debug("Notification dispatcher checking subscriptions",
 		"agentID", statusEvt.AgentID, "activity", matchStatus, "subscriptionCount", len(subs))
 
 	for i := range subs {
@@ -119,7 +121,7 @@ func (nd *NotificationDispatcher) handleEvent(evt Event) {
 		// Dedup: check if the last notification for this subscription already has this status
 		lastStatus, err := nd.store.GetLastNotificationStatus(ctx, sub.ID)
 		if err != nil {
-			slog.Error("Failed to get last notification status",
+			nd.log.Error("Failed to get last notification status",
 				"subscriptionID", sub.ID, "error", err)
 			continue
 		}
@@ -135,7 +137,7 @@ func (nd *NotificationDispatcher) handleEvent(evt Event) {
 func (nd *NotificationDispatcher) storeAndDispatch(ctx context.Context, sub *store.NotificationSubscription, evt AgentStatusEvent) {
 	agent, err := nd.store.GetAgent(ctx, evt.AgentID)
 	if err != nil {
-		slog.Error("Failed to get agent for notification",
+		nd.log.Error("Failed to get agent for notification",
 			"agentID", evt.AgentID, "error", err)
 		return
 	}
@@ -158,7 +160,7 @@ func (nd *NotificationDispatcher) storeAndDispatch(ctx context.Context, sub *sto
 	}
 
 	if err := nd.store.CreateNotification(ctx, notif); err != nil {
-		slog.Error("Failed to create notification",
+		nd.log.Error("Failed to create notification",
 			"subscriptionID", sub.ID, "agentID", evt.AgentID, "error", err)
 		return
 	}
@@ -167,10 +169,10 @@ func (nd *NotificationDispatcher) storeAndDispatch(ctx context.Context, sub *sto
 	case store.SubscriberTypeAgent:
 		nd.dispatchToAgent(ctx, sub, notif)
 	case store.SubscriberTypeUser:
-		slog.Debug("User notification stored (dispatch not yet implemented)",
+		nd.log.Debug("User notification stored (dispatch not yet implemented)",
 			"subscriberID", sub.SubscriberID, "notificationID", notif.ID)
 	default:
-		slog.Warn("Unknown subscriber type", "type", sub.SubscriberType)
+		nd.log.Warn("Unknown subscriber type", "type", sub.SubscriberType)
 	}
 }
 
@@ -178,39 +180,39 @@ func (nd *NotificationDispatcher) storeAndDispatch(ctx context.Context, sub *sto
 func (nd *NotificationDispatcher) dispatchToAgent(ctx context.Context, sub *store.NotificationSubscription, notif *store.Notification) {
 	subscriber, err := nd.store.GetAgentBySlug(ctx, sub.GroveID, sub.SubscriberID)
 	if err != nil {
-		slog.Warn("Subscriber agent not found, skipping dispatch",
+		nd.log.Warn("Subscriber agent not found, skipping dispatch",
 			"subscriberID", sub.SubscriberID, "groveID", sub.GroveID, "error", err)
 		return
 	}
 
 	dispatcher := nd.getDispatcher()
 	if dispatcher == nil {
-		slog.Warn("No dispatcher available, skipping notification dispatch",
+		nd.log.Warn("No dispatcher available, skipping notification dispatch",
 			"subscriberID", sub.SubscriberID)
 		// Mark dispatched anyway (best-effort)
 		if err := nd.store.MarkNotificationDispatched(ctx, notif.ID); err != nil {
-			slog.Error("Failed to mark notification dispatched", "notificationID", notif.ID, "error", err)
+			nd.log.Error("Failed to mark notification dispatched", "notificationID", notif.ID, "error", err)
 		}
 		return
 	}
 
 	if subscriber.RuntimeBrokerID == "" {
-		slog.Warn("Subscriber agent has no runtime broker, skipping dispatch",
+		nd.log.Warn("Subscriber agent has no runtime broker, skipping dispatch",
 			"subscriberID", sub.SubscriberID)
 		if err := nd.store.MarkNotificationDispatched(ctx, notif.ID); err != nil {
-			slog.Error("Failed to mark notification dispatched", "notificationID", notif.ID, "error", err)
+			nd.log.Error("Failed to mark notification dispatched", "notificationID", notif.ID, "error", err)
 		}
 		return
 	}
 
 	if err := dispatcher.DispatchAgentMessage(ctx, subscriber, notif.Message, false); err != nil {
-		slog.Error("Failed to dispatch notification to agent",
+		nd.log.Error("Failed to dispatch notification to agent",
 			"subscriberID", sub.SubscriberID, "error", err)
 	}
 
 	// Mark dispatched regardless of success (best-effort)
 	if err := nd.store.MarkNotificationDispatched(ctx, notif.ID); err != nil {
-		slog.Error("Failed to mark notification dispatched", "notificationID", notif.ID, "error", err)
+		nd.log.Error("Failed to mark notification dispatched", "notificationID", notif.ID, "error", err)
 	}
 }
 

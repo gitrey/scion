@@ -19,6 +19,7 @@ package hub
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"testing"
 	"time"
@@ -34,7 +35,7 @@ func setupScheduledEventTest(t *testing.T) (*Server, store.Store, string) {
 	ctx := context.Background()
 
 	// Initialize the scheduler (normally done by Server.Start)
-	srv.scheduler = NewScheduler(s)
+	srv.scheduler = NewScheduler(s, slog.Default())
 	srv.scheduler.RegisterEventHandler("message", srv.messageEventHandler())
 
 	grove := &store.Grove{

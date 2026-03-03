@@ -18,6 +18,7 @@ package hub
 
 import (
 	"context"
+	"log/slog"
 	"sync"
 	"testing"
 	"time"
@@ -218,7 +219,7 @@ func TestAgentHeartbeatTimeoutHandler_SchedulerIntegration(t *testing.T) {
 	srv, s, _ := setupHeartbeatTestServer(t)
 
 	// Verify the handler can be registered and runs without panic
-	scheduler := NewScheduler(s)
+	scheduler := NewScheduler(s, slog.Default())
 	scheduler.tickInterval = 50 * time.Millisecond
 
 	scheduler.RegisterRecurring("agent-heartbeat-timeout", 1, srv.agentHeartbeatTimeoutHandler())

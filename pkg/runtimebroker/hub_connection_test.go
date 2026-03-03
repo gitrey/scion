@@ -19,6 +19,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -332,7 +333,7 @@ func TestHeartbeatService_GroveFilter(t *testing.T) {
 		return groveID == "grove-hub1"
 	}
 
-	svc := NewHeartbeatService(client, "test-host", time.Hour, manager, groveFilter)
+	svc := NewHeartbeatService(client, "test-host", time.Hour, manager, groveFilter, slog.Default())
 	err := svc.ForceHeartbeat(context.Background())
 	if err != nil {
 		t.Fatalf("ForceHeartbeat failed: %v", err)
@@ -369,7 +370,7 @@ func TestHeartbeatService_NilGroveFilter(t *testing.T) {
 	}
 
 	// Nil filter: include all groves
-	svc := NewHeartbeatService(client, "test-host", time.Hour, manager, nil)
+	svc := NewHeartbeatService(client, "test-host", time.Hour, manager, nil, slog.Default())
 	err := svc.ForceHeartbeat(context.Background())
 	if err != nil {
 		t.Fatalf("ForceHeartbeat failed: %v", err)
@@ -1268,7 +1269,7 @@ func TestControlChannel_ConnectionNameHeader(t *testing.T) {
 		SecretKey:   []byte("test-secret-key-12345678901234567890"),
 	}
 
-	cc := NewControlChannelClient(config, nil, nil, "hub-prod")
+	cc := NewControlChannelClient(config, nil, nil, "hub-prod", slog.Default())
 
 	if cc.connectionName != "hub-prod" {
 		t.Errorf("expected connectionName 'hub-prod', got %q", cc.connectionName)
@@ -1282,7 +1283,7 @@ func TestControlChannel_EmptyConnectionName(t *testing.T) {
 		SecretKey:   []byte("test-secret-key-12345678901234567890"),
 	}
 
-	cc := NewControlChannelClient(config, nil, nil, "")
+	cc := NewControlChannelClient(config, nil, nil, "", slog.Default())
 
 	if cc.connectionName != "" {
 		t.Errorf("expected empty connectionName, got %q", cc.connectionName)

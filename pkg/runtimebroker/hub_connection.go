@@ -25,6 +25,7 @@ import (
 	"github.com/ptone/scion-agent/pkg/brokercredentials"
 	"github.com/ptone/scion-agent/pkg/hubclient"
 	"github.com/ptone/scion-agent/pkg/templatecache"
+	"github.com/ptone/scion-agent/pkg/util/logging"
 )
 
 // ConnectionStatus represents the state of a hub connection.
@@ -101,6 +102,7 @@ func (hc *HubConnection) Start(ctx context.Context, server *Server) error {
 				interval,
 				server.manager,
 				groveFilter,
+				logging.Subsystem("broker.heartbeat"),
 			)
 			hc.Heartbeat.SetVersion(server.version)
 			hc.Heartbeat.Start(ctx)
@@ -127,7 +129,7 @@ func (hc *HubConnection) Start(ctx context.Context, server *Server) error {
 				Debug:               server.config.Debug,
 			}
 
-			hc.ControlChannel = NewControlChannelClient(ccConfig, server.Handler(), server, hc.Name)
+			hc.ControlChannel = NewControlChannelClient(ccConfig, server.Handler(), server, hc.Name, logging.Subsystem("broker.control-channel"))
 			go func() {
 				if err := hc.ControlChannel.Connect(ctx); err != nil {
 					if ctx.Err() != nil {

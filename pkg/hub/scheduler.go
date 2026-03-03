@@ -57,6 +57,9 @@ type Scheduler struct {
 	mu     sync.Mutex
 	timers map[string]*scheduledTimer
 
+	// Logger
+	log *slog.Logger
+
 	// Lifecycle
 	stopCh   chan struct{}
 	stopOnce sync.Once
@@ -79,12 +82,13 @@ type scheduledTimer struct {
 }
 
 // NewScheduler creates a new Scheduler with a 1-minute root ticker interval.
-func NewScheduler(st store.Store) *Scheduler {
+func NewScheduler(st store.Store, log *slog.Logger) *Scheduler {
 	return &Scheduler{
 		store:         st,
 		tickInterval:  1 * time.Minute,
 		timers:        make(map[string]*scheduledTimer),
 		eventHandlers: make(map[string]EventHandler),
+		log:           log,
 		stopCh:        make(chan struct{}),
 	}
 }
@@ -178,19 +182,19 @@ func (s *Scheduler) runRecurringHandlers(ctx context.Context) {
 				defer cancel()
 
 				start := time.Now()
-				slog.Debug("Scheduler: running recurring handler", "name", handler.Name, "tick", s.tickCount)
+				s.log.Debug("Scheduler: running recurring handler", "name", handler.Name, "tick", s.tickCount)
 
 				func() {
 					defer func() {
 						if r := recover(); r != nil {
-							slog.Error("Scheduler: recurring handler panicked",
+							s.log.Error("Scheduler: recurring handler panicked",
 								"name", handler.Name, "panic", r)
 						}
 					}()
 					handler.Fn(handlerCtx)
 				}()
 
-				slog.Debug("Scheduler: recurring handler completed",
+				s.log.Debug("Scheduler: recurring handler completed",
 					"name", handler.Name, "duration", time.Since(start))
 			}()
 		}
@@ -211,7 +215,7 @@ func (s *Scheduler) loadPersistedTimers(ctx context.Context) {
 
 	events, err := s.store.ListPendingScheduledEvents(ctx)
 	if err != nil {
-		slog.Error("Scheduler: failed to load pending events", "error", err)
+		s.log.Error("Scheduler: failed to load pending events", "error", err)
 		return
 	}
 
@@ -231,7 +235,7 @@ func (s *Scheduler) loadPersistedTimers(ctx context.Context) {
 	}
 
 	if expiredCount > 0 || scheduledCount > 0 {
-		slog.Info("Scheduler: loaded persisted events",
+		s.log.Info("Scheduler: loaded persisted events",
 			"expired", expiredCount, "scheduled", scheduledCount)
 	}
 }
@@ -281,17 +285,17 @@ func (s *Scheduler) fireEvent(ctx context.Context, evt store.ScheduledEvent, was
 		defer func() {
 			if r := recover(); r != nil {
 				errMsg = fmt.Sprintf("handler panicked: %v", r)
-				slog.Error("Scheduler: event handler panicked",
+				s.log.Error("Scheduler: event handler panicked",
 					"eventID", evt.ID, "type", evt.EventType, "panic", r)
 			}
 		}()
 
 		if err := s.executeEvent(handlerCtx, evt); err != nil {
 			errMsg = err.Error()
-			slog.Warn("Scheduler: event handler failed",
+			s.log.Warn("Scheduler: event handler failed",
 				"eventID", evt.ID, "type", evt.EventType, "error", err)
 		} else {
-			slog.Info("Scheduler: event fired",
+			s.log.Info("Scheduler: event fired",
 				"eventID", evt.ID, "type", evt.EventType, "wasExpired", wasExpired)
 		}
 	}()
@@ -327,7 +331,7 @@ func (s *Scheduler) ScheduleEvent(ctx context.Context, evt store.ScheduledEvent)
 	// Schedule in memory
 	s.scheduleTimer(ctx, evt)
 
-	slog.Info("Scheduler: event scheduled",
+	s.log.Info("Scheduler: event scheduled",
 		"eventID", evt.ID, "type", evt.EventType, "fireAt", evt.FireAt)
 	return nil
 }

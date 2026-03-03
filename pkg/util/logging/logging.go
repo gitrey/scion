@@ -22,12 +22,13 @@ import (
 
 // Standard attribute keys
 const (
-	AttrComponent = "component"
-	AttrTraceID   = "trace_id"
-	AttrGroveID   = "grove_id"
-	AttrAgentID   = "agent_id"
-	AttrRequestID = "request_id"
-	AttrUserID    = "user_id"
+	AttrComponent  = "component"
+	AttrSubsystem  = "subsystem"
+	AttrTraceID    = "trace_id"
+	AttrGroveID    = "grove_id"
+	AttrAgentID    = "agent_id"
+	AttrRequestID  = "request_id"
+	AttrUserID     = "user_id"
 )
 
 // Setup initializes the global logger.
@@ -72,6 +73,13 @@ func WithMetadata(ctx context.Context, attrs ...slog.Attr) context.Context {
 // Currently it just returns the default logger.
 func Logger(ctx context.Context) *slog.Logger {
 	return slog.Default()
+}
+
+// Subsystem returns a child logger with the given subsystem attribute.
+// The returned logger inherits the root component attribute and adds
+// a "subsystem" field for finer-grained log filtering.
+func Subsystem(name string) *slog.Logger {
+	return slog.Default().With(slog.String(AttrSubsystem, name))
 }
 
 // Handler with component name

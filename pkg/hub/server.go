@@ -443,7 +443,7 @@ func New(cfg ServerConfig, s store.Store) *Server {
 		MaxMessageSize: 64 * 1024,
 		RequestTimeout: 120 * time.Second,
 		Debug:          cfg.Debug,
-	})
+	}, logging.Subsystem("hub.control-channel"))
 	// Set disconnect callback to mark broker offline when WebSocket drops
 	srv.controlChannel.SetOnDisconnect(func(brokerID string) {
 		ctx := context.Background()
@@ -475,7 +475,7 @@ func New(cfg ServerConfig, s store.Store) *Server {
 	slog.Info("Control channel manager initialized")
 
 	// Initialize authorization service
-	srv.authzService = NewAuthzService(s, slog.Default())
+	srv.authzService = NewAuthzService(s, logging.Subsystem("hub.auth"))
 
 	// Seed default policies and groups (idempotent)
 	seedDefaultPoliciesAndGroups(ctx, s)
@@ -733,7 +733,7 @@ func (s *Server) StartNotificationDispatcher() {
 		return
 	}
 
-	s.notificationDispatcher = NewNotificationDispatcher(s.store, ep, s.GetDispatcher)
+	s.notificationDispatcher = NewNotificationDispatcher(s.store, ep, s.GetDispatcher, logging.Subsystem("hub.notifications"))
 	s.notificationDispatcher.Start()
 }
 
@@ -942,7 +942,7 @@ func (s *Server) Start(ctx context.Context) error {
 	s.mu.Unlock()
 
 	// Initialize and start the scheduler
-	s.scheduler = NewScheduler(s.store)
+	s.scheduler = NewScheduler(s.store, logging.Subsystem("hub.scheduler"))
 	s.scheduler.RegisterRecurring("agent-heartbeat-timeout", 1, s.agentHeartbeatTimeoutHandler())
 	if s.config.SoftDeleteRetention > 0 {
 		s.scheduler.RegisterRecurring("soft-delete-purge", 60, s.purgeHandler())

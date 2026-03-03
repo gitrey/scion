@@ -87,6 +87,7 @@ type ControlChannelClient struct {
 	handlers       http.Handler  // Reuse existing HTTP handlers
 	agentLookup    AgentLookup   // For looking up agent container IDs
 	connectionName string        // identifies which HubConnection this belongs to
+	log            *slog.Logger
 	streams        map[string]*StreamHandler
 	streamMu       sync.RWMutex
 
@@ -117,12 +118,13 @@ type StreamHandler struct {
 // NewControlChannelClient creates a new control channel client.
 // The connectionName identifies which HubConnection this control channel belongs to,
 // enabling request routing to the correct hydrator in multi-hub mode.
-func NewControlChannelClient(config ControlChannelConfig, handlers http.Handler, agentLookup AgentLookup, connectionName string) *ControlChannelClient {
+func NewControlChannelClient(config ControlChannelConfig, handlers http.Handler, agentLookup AgentLookup, connectionName string, log *slog.Logger) *ControlChannelClient {
 	return &ControlChannelClient{
 		config:         config,
 		handlers:       handlers,
 		agentLookup:    agentLookup,
 		connectionName: connectionName,
+		log:            log,
 		streams:        make(map[string]*StreamHandler),
 	}
 }
@@ -155,7 +157,7 @@ func (c *ControlChannelClient) connectWithBackoff() error {
 		}
 
 		if err := c.doConnect(); err != nil {
-			slog.Error("Control channel connection failed", "error", err, "retry_in", backoff)
+			c.log.Error("Control channel connection failed", "error", err, "retry_in", backoff)
 
 			select {
 			case <-c.ctx.Done():
@@ -176,7 +178,7 @@ func (c *ControlChannelClient) connectWithBackoff() error {
 
 		// Connection lost, try to reconnect
 		if c.ctx.Err() == nil {
-			slog.Info("Control channel connection lost, reconnecting...")
+			c.log.Info("Control channel connection lost, reconnecting...")
 			backoff = c.config.ReconnectInitial
 			if backoff == 0 {
 				backoff = 1 * time.Second
@@ -227,7 +229,7 @@ func (c *ControlChannelClient) doConnect() error {
 		return fmt.Errorf("connection handshake failed: %w", err)
 	}
 
-	slog.Info("Connected to Hub control channel", "sessionID", c.sessionID)
+	c.log.Info("Connected to Hub control channel", "sessionID", c.sessionID)
 	return nil
 }
 
@@ -343,7 +345,7 @@ func (c *ControlChannelClient) runMessageLoop() {
 
 	// Set initial read deadline
 	if err := c.conn.SetReadDeadline(time.Now().Add(c.config.PongWait)); err != nil {
-		slog.Error("Failed to set read deadline", "error", err)
+		c.log.Error("Failed to set read deadline", "error", err)
 		return
 	}
 
@@ -357,14 +359,14 @@ func (c *ControlChannelClient) runMessageLoop() {
 		_, data, err := c.conn.ReadMessage()
 		if err != nil {
 			if wsprotocol.IsUnexpectedCloseError(err, wsprotocol.CloseGoingAway, wsprotocol.CloseNormalClosure) {
-				slog.Error("Control channel read error", "error", err)
+				c.log.Error("Control channel read error", "error", err)
 			}
 			c.markDisconnected()
 			return
 		}
 
 		if err := c.handleMessage(data); err != nil {
-			slog.Error("Control channel message handling error", "error", err)
+			c.log.Error("Control channel message handling error", "error", err)
 		}
 	}
 }
@@ -390,7 +392,7 @@ func (c *ControlChannelClient) pingLoop() {
 			}
 
 			if err := c.conn.WritePing(); err != nil {
-				slog.Error("Failed to ping Hub", "error", err)
+				c.log.Error("Failed to ping Hub", "error", err)
 				return
 			}
 		}
@@ -419,7 +421,7 @@ func (c *ControlChannelClient) handleMessage(data []byte) error {
 		return c.conn.WriteJSON(wsprotocol.NewPongMessage())
 	default:
 		if c.config.Debug {
-			slog.Debug("Unknown control channel message type", "type", env.Type)
+			c.log.Debug("Unknown control channel message type", "type", env.Type)
 		}
 		return nil
 	}
@@ -436,7 +438,7 @@ func (c *ControlChannelClient) handleRequest(data []byte) (retErr error) {
 	// prevent crashing the broker process. Send a 400 error back instead.
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Error("Panic in control channel request handler", "panic", r, "method", req.Method, "path", req.Path)
+			c.log.Error("Panic in control channel request handler", "panic", r, "method", req.Method, "path", req.Path)
 			resp := wsprotocol.NewResponseEnvelope(req.RequestID, http.StatusBadRequest, nil, []byte(fmt.Sprintf(`{"error":"request caused panic: %v"}`, r)))
 			if writeErr := c.conn.WriteJSON(resp); writeErr != nil {
 				retErr = fmt.Errorf("failed to send panic error response: %w", writeErr)
@@ -445,7 +447,7 @@ func (c *ControlChannelClient) handleRequest(data []byte) (retErr error) {
 	}()
 
 	if c.config.Debug {
-		slog.Debug("Control channel request", "method", req.Method, "path", req.Path)
+		c.log.Debug("Control channel request", "method", req.Method, "path", req.Path)
 	}
 
 	// Build HTTP request
@@ -497,7 +499,7 @@ func (c *ControlChannelClient) handleStreamOpen(data []byte) error {
 	}
 
 	if c.config.Debug {
-		slog.Debug("Stream open requested via control channel",
+		c.log.Debug("Stream open requested via control channel",
 			"streamID", open.StreamID,
 			"type", open.StreamType,
 			"slug", open.Slug,
@@ -523,7 +525,7 @@ func (c *ControlChannelClient) handleStreamOpen(data []byte) error {
 	case wsprotocol.StreamTypePTY:
 		go c.handlePTYStream(handler, open.Cols, open.Rows)
 	default:
-		slog.Debug("Unknown stream type", "type", open.StreamType)
+		c.log.Debug("Unknown stream type", "type", open.StreamType)
 	}
 
 	return nil
@@ -542,7 +544,7 @@ func (c *ControlChannelClient) handleStreamData(data []byte) error {
 
 	if !ok {
 		if c.config.Debug {
-			slog.Debug("Data for unknown stream", "streamID", frame.StreamID)
+			c.log.Debug("Data for unknown stream", "streamID", frame.StreamID)
 		}
 		return nil
 	}
@@ -550,7 +552,7 @@ func (c *ControlChannelClient) handleStreamData(data []byte) error {
 	select {
 	case handler.dataCh <- frame.Data:
 	default:
-		slog.Warn("Stream buffer full", "streamID", frame.StreamID)
+		c.log.Warn("Stream buffer full", "streamID", frame.StreamID)
 	}
 
 	return nil
@@ -580,7 +582,7 @@ func (c *ControlChannelClient) handleStreamClose(data []byte) error {
 	}
 
 	if c.config.Debug {
-		slog.Debug("Control channel stream closed", "streamID", closeMsg.StreamID, "reason", closeMsg.Reason)
+		c.log.Debug("Control channel stream closed", "streamID", closeMsg.StreamID, "reason", closeMsg.Reason)
 	}
 
 	return nil
@@ -618,7 +620,7 @@ func (c *ControlChannelClient) handleStreamResize(data []byte) error {
 
 // handlePTYStream handles a PTY stream by looking up the agent and starting a PTY session.
 func (c *ControlChannelClient) handlePTYStream(handler *StreamHandler, cols, rows int) {
-	slog.Info("PTY stream started via control channel",
+	c.log.Info("PTY stream started via control channel",
 		"slug", handler.slug,
 		"cols", cols,
 		"rows", rows,
@@ -626,25 +628,25 @@ func (c *ControlChannelClient) handlePTYStream(handler *StreamHandler, cols, row
 
 	// Look up the container ID for this agent
 	if c.agentLookup == nil {
-		slog.Error("PTY stream failed: no agent lookup configured", "slug", handler.slug)
+		c.log.Error("PTY stream failed: no agent lookup configured", "slug", handler.slug)
 		c.CloseStream(handler.streamID, "agent lookup not configured", 500)
 		return
 	}
 
 	containerID, err := c.agentLookup.LookupContainerID(c.ctx, handler.slug)
 	if err != nil {
-		slog.Error("PTY stream failed: agent lookup error", "slug", handler.slug, "error", err)
+		c.log.Error("PTY stream failed: agent lookup error", "slug", handler.slug, "error", err)
 		c.CloseStream(handler.streamID, fmt.Sprintf("agent lookup failed: %v", err), 404)
 		return
 	}
 
 	if containerID == "" {
-		slog.Error("PTY stream failed: container not found", "slug", handler.slug)
+		c.log.Error("PTY stream failed: container not found", "slug", handler.slug)
 		c.CloseStream(handler.streamID, "container not found", 404)
 		return
 	}
 
-	slog.Debug("PTY stream found container", "slug", handler.slug, "containerID", containerID)
+	c.log.Debug("PTY stream found container", "slug", handler.slug, "containerID", containerID)
 
 	// Get the runtime command (docker, container, etc.)
 	runtimeCmd := c.agentLookup.RuntimeCommand()
@@ -652,7 +654,7 @@ func (c *ControlChannelClient) handlePTYStream(handler *StreamHandler, cols, row
 	// Start the actual PTY session
 	c.handlePTYStreamWithAgent(handler, cols, rows, containerID, runtimeCmd)
 
-	slog.Info("PTY stream ended via control channel", "slug", handler.slug)
+	c.log.Info("PTY stream ended via control channel", "slug", handler.slug)
 
 	// Notify the Hub that the stream is closed so it can close the client websocket
 	c.CloseStream(handler.streamID, "session ended", 0)

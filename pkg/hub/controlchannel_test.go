@@ -15,6 +15,7 @@
 package hub
 
 import (
+	"log/slog"
 	"sync"
 	"testing"
 	"time"
@@ -24,7 +25,7 @@ import (
 )
 
 func TestControlChannelManager_OnDisconnectCallback(t *testing.T) {
-	mgr := NewControlChannelManager(DefaultControlChannelConfig())
+	mgr := NewControlChannelManager(DefaultControlChannelConfig(), slog.Default())
 
 	var mu sync.Mutex
 	var receivedBrokerID string
@@ -60,7 +61,7 @@ func TestControlChannelManager_OnDisconnectCallback(t *testing.T) {
 }
 
 func TestControlChannelManager_OnDisconnectCallback_NilSafe(t *testing.T) {
-	mgr := NewControlChannelManager(DefaultControlChannelConfig())
+	mgr := NewControlChannelManager(DefaultControlChannelConfig(), slog.Default())
 
 	// Don't set any callback - verify removeConnection doesn't panic
 	mgr.mu.Lock()
