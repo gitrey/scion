@@ -7,6 +7,7 @@ package telemetry
 import (
 	"context"
 	"fmt"
+	stdlog "log"
 	"os"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -18,6 +19,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
+	"google.golang.org/grpc"
 )
 
 // Providers holds SDK TracerProvider, LoggerProvider, and MeterProvider for OTel export.
@@ -57,12 +59,28 @@ func NewProviders(ctx context.Context, config *Config, batch bool) (*Providers, 
 		return nil, fmt.Errorf("creating resource: %w", err)
 	}
 
+	// Load GCP dial options if credentials are configured and TLS is enabled
+	var gcpDialOpts []grpc.DialOption
+	if config.GCPCredentialsFile != "" {
+		if config.Insecure {
+			stdlog.Println("[telemetry] WARNING: GCP credentials require TLS; skipping credential injection with insecure mode")
+		} else {
+			gcpDialOpts, err = loadGCPDialOptions(ctx, config.GCPCredentialsFile)
+			if err != nil {
+				return nil, fmt.Errorf("loading GCP credentials: %w", err)
+			}
+		}
+	}
+
 	// Create trace exporter (gRPC)
 	traceOpts := []otlptracegrpc.Option{
 		otlptracegrpc.WithEndpoint(config.Endpoint),
 	}
 	if config.Insecure {
 		traceOpts = append(traceOpts, otlptracegrpc.WithInsecure())
+	}
+	for _, do := range gcpDialOpts {
+		traceOpts = append(traceOpts, otlptracegrpc.WithDialOption(do))
 	}
 	traceExporter, err := otlptracegrpc.New(ctx, traceOpts...)
 	if err != nil {
@@ -75,6 +93,9 @@ func NewProviders(ctx context.Context, config *Config, batch bool) (*Providers, 
 	}
 	if config.Insecure {
 		logOpts = append(logOpts, otlploggrpc.WithInsecure())
+	}
+	for _, do := range gcpDialOpts {
+		logOpts = append(logOpts, otlploggrpc.WithDialOption(do))
 	}
 	logExporter, err := otlploggrpc.New(ctx, logOpts...)
 	if err != nil {
@@ -89,6 +110,9 @@ func NewProviders(ctx context.Context, config *Config, batch bool) (*Providers, 
 	}
 	if config.Insecure {
 		metricOpts = append(metricOpts, otlpmetricgrpc.WithInsecure())
+	}
+	for _, do := range gcpDialOpts {
+		metricOpts = append(metricOpts, otlpmetricgrpc.WithDialOption(do))
 	}
 	metricExporter, err := otlpmetricgrpc.New(ctx, metricOpts...)
 	if err != nil {

@@ -38,6 +38,11 @@ const (
 	EnvRedactFields = "SCION_TELEMETRY_REDACT"
 	// EnvHashFields is a comma-separated list of fields to hash.
 	EnvHashFields = "SCION_TELEMETRY_HASH"
+	// EnvGCPCredentials is the path to a GCP service account key file
+	// for authenticating OTLP exports. Injected by the broker runtime.
+	EnvGCPCredentials = "SCION_OTEL_GCP_CREDENTIALS"
+	// EnvCloudProvider identifies the cloud telemetry backend (e.g. "gcp").
+	EnvCloudProvider = "SCION_TELEMETRY_CLOUD_PROVIDER"
 )
 
 // Default configuration values.
@@ -78,6 +83,10 @@ type Config struct {
 	Filter FilterConfig
 	// Redaction contains the redaction/hashing configuration.
 	Redaction RedactionConfig
+	// GCPCredentialsFile is the path to a GCP service account key file.
+	GCPCredentialsFile string
+	// CloudProvider identifies the cloud telemetry backend (e.g. "gcp").
+	CloudProvider string
 }
 
 // FilterConfig holds include/exclude patterns for event filtering.
@@ -107,6 +116,8 @@ func LoadConfig() *Config {
 			Redact: parseCSVEnv(EnvRedactFields),
 			Hash:   parseCSVEnv(EnvHashFields),
 		},
+		GCPCredentialsFile: os.Getenv(EnvGCPCredentials),
+		CloudProvider:      os.Getenv(EnvCloudProvider),
 	}
 
 	// Apply default exclude list if not explicitly set

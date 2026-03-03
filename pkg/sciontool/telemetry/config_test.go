@@ -196,6 +196,36 @@ func TestParseCSVEnv(t *testing.T) {
 	os.Unsetenv("TEST_CSV")
 }
 
+func TestLoadConfig_GCPDefaults(t *testing.T) {
+	clearTelemetryEnv()
+
+	cfg := LoadConfig()
+
+	if cfg.GCPCredentialsFile != "" {
+		t.Errorf("Expected GCPCredentialsFile to be empty by default, got %q", cfg.GCPCredentialsFile)
+	}
+	if cfg.CloudProvider != "" {
+		t.Errorf("Expected CloudProvider to be empty by default, got %q", cfg.CloudProvider)
+	}
+}
+
+func TestLoadConfig_GCPEnvOverrides(t *testing.T) {
+	clearTelemetryEnv()
+
+	os.Setenv(EnvGCPCredentials, "/etc/gcp/sa.json")
+	os.Setenv(EnvCloudProvider, "gcp")
+	defer clearTelemetryEnv()
+
+	cfg := LoadConfig()
+
+	if cfg.GCPCredentialsFile != "/etc/gcp/sa.json" {
+		t.Errorf("Expected GCPCredentialsFile to be '/etc/gcp/sa.json', got %q", cfg.GCPCredentialsFile)
+	}
+	if cfg.CloudProvider != "gcp" {
+		t.Errorf("Expected CloudProvider to be 'gcp', got %q", cfg.CloudProvider)
+	}
+}
+
 func clearTelemetryEnv() {
 	os.Unsetenv(EnvEnabled)
 	os.Unsetenv(EnvCloudEnabled)
@@ -207,4 +237,6 @@ func clearTelemetryEnv() {
 	os.Unsetenv(EnvFilterExclude)
 	os.Unsetenv(EnvFilterInclude)
 	os.Unsetenv(EnvProjectID)
+	os.Unsetenv(EnvGCPCredentials)
+	os.Unsetenv(EnvCloudProvider)
 }
