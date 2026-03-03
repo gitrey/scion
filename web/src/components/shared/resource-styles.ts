@@ -450,3 +450,281 @@ export const resourceStyles = css`
     }
   }
 `;
+
+/**
+ * Shared CSS styles for resource list pages (groves, agents, brokers).
+ *
+ * Consolidates duplicated header, loading/error/empty state, card grid,
+ * table, and stat styles so each page only needs page-specific overrides.
+ */
+export const listPageStyles = css`
+  :host {
+    display: block;
+  }
+
+  /* ── Page header ─────────────────────────────────────────────────── */
+
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1.5rem;
+  }
+
+  .header h1 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--scion-text, #1e293b);
+    margin: 0;
+  }
+
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  /* ── Card grid ───────────────────────────────────────────────────── */
+
+  .resource-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 1.5rem;
+  }
+
+  .resource-card {
+    background: var(--scion-surface, #ffffff);
+    border: 1px solid var(--scion-border, #e2e8f0);
+    border-radius: var(--scion-radius-lg, 0.75rem);
+    padding: 1.5rem;
+    transition: all var(--scion-transition-fast, 150ms ease);
+    cursor: pointer;
+    text-decoration: none;
+    color: inherit;
+    display: block;
+  }
+
+  .resource-card:hover {
+    border-color: var(--scion-primary, #3b82f6);
+    box-shadow: var(--scion-shadow-md, 0 4px 6px -1px rgba(0, 0, 0, 0.1));
+    transform: translateY(-2px);
+  }
+
+  /* ── Resource name (icon + text) ─────────────────────────────────── */
+
+  .resource-name {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--scion-text, #1e293b);
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .resource-name sl-icon {
+    color: var(--scion-primary, #3b82f6);
+  }
+
+  /* ── Stats (label + value pairs) ─────────────────────────────────── */
+
+  .stat {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .stat-label {
+    font-size: 0.75rem;
+    color: var(--scion-text-muted, #64748b);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .stat-value {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--scion-text, #1e293b);
+  }
+
+  /* ── Table layout ────────────────────────────────────────────────── */
+
+  .resource-table-container {
+    background: var(--scion-surface, #ffffff);
+    border: 1px solid var(--scion-border, #e2e8f0);
+    border-radius: var(--scion-radius-lg, 0.75rem);
+    overflow: hidden;
+  }
+
+  .resource-table-container table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .resource-table-container th {
+    text-align: left;
+    padding: 0.75rem 1rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--scion-text-muted, #64748b);
+    background: var(--scion-bg-subtle, #f1f5f9);
+    border-bottom: 1px solid var(--scion-border, #e2e8f0);
+  }
+
+  .resource-table-container td {
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    color: var(--scion-text, #1e293b);
+    border-bottom: 1px solid var(--scion-border, #e2e8f0);
+    vertical-align: middle;
+  }
+
+  .resource-table-container tr:last-child td {
+    border-bottom: none;
+  }
+
+  .resource-table-container tr:hover td {
+    background: var(--scion-bg-subtle, #f1f5f9);
+  }
+
+  .resource-table-container tr.clickable {
+    cursor: pointer;
+  }
+
+  .resource-table-container .actions-cell {
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .resource-table-container .mono-cell {
+    font-family: var(--scion-font-mono, monospace);
+    font-size: 0.8125rem;
+    max-width: 300px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .resource-table-container .name-cell {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 500;
+  }
+
+  .resource-table-container .name-cell sl-icon {
+    color: var(--scion-primary, #3b82f6);
+    flex-shrink: 0;
+  }
+
+  .resource-table-container .name-cell a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .resource-table-container .name-cell a:hover {
+    text-decoration: underline;
+  }
+
+  .resource-table-container .task-cell {
+    max-width: 250px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--scion-text-muted, #64748b);
+    font-size: 0.8125rem;
+  }
+
+  .resource-table-container .meta-text {
+    font-size: 0.8125rem;
+    color: var(--scion-text-muted, #64748b);
+  }
+
+  /* ── Loading / Error / Empty states ──────────────────────────────── */
+
+  .loading-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 4rem 2rem;
+    color: var(--scion-text-muted, #64748b);
+  }
+
+  .loading-state sl-spinner {
+    font-size: 2rem;
+    margin-bottom: 1rem;
+  }
+
+  .error-state {
+    text-align: center;
+    padding: 3rem 2rem;
+    background: var(--scion-surface, #ffffff);
+    border: 1px solid var(--sl-color-danger-200, #fecaca);
+    border-radius: var(--scion-radius-lg, 0.75rem);
+  }
+
+  .error-state sl-icon {
+    font-size: 3rem;
+    color: var(--sl-color-danger-500, #ef4444);
+    margin-bottom: 1rem;
+  }
+
+  .error-state h2 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--scion-text, #1e293b);
+    margin: 0 0 0.5rem 0;
+  }
+
+  .error-state p {
+    color: var(--scion-text-muted, #64748b);
+    margin: 0 0 1rem 0;
+  }
+
+  .error-details {
+    font-family: var(--scion-font-mono, monospace);
+    font-size: 0.875rem;
+    background: var(--scion-bg-subtle, #f1f5f9);
+    padding: 0.75rem 1rem;
+    border-radius: var(--scion-radius, 0.5rem);
+    color: var(--sl-color-danger-700, #b91c1c);
+    margin-bottom: 1rem;
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 4rem 2rem;
+    background: var(--scion-surface, #ffffff);
+    border: 1px dashed var(--scion-border, #e2e8f0);
+    border-radius: var(--scion-radius-lg, 0.75rem);
+  }
+
+  .empty-state > sl-icon {
+    font-size: 4rem;
+    color: var(--scion-text-muted, #64748b);
+    opacity: 0.5;
+    margin-bottom: 1rem;
+  }
+
+  .empty-state h2 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--scion-text, #1e293b);
+    margin: 0 0 0.5rem 0;
+  }
+
+  .empty-state p {
+    color: var(--scion-text-muted, #64748b);
+    margin: 0 0 1.5rem 0;
+  }
+
+  /* ── Responsive ──────────────────────────────────────────────────── */
+
+  @media (max-width: 768px) {
+    .hide-mobile {
+      display: none;
+    }
+  }
+`;

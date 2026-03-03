@@ -25,7 +25,10 @@ import { customElement, property, state } from 'lit/decorators.js';
 
 import type { PageData, RuntimeBroker } from '../../shared/types.js';
 import { stateManager } from '../../client/state.js';
+import { listPageStyles } from '../shared/resource-styles.js';
+import type { ViewMode } from '../shared/view-toggle.js';
 import '../shared/status-badge.js';
+import '../shared/view-toggle.js';
 
 @customElement('scion-page-brokers')
 export class ScionPageBrokers extends LitElement {
@@ -53,212 +56,84 @@ export class ScionPageBrokers extends LitElement {
   @state()
   private error: string | null = null;
 
+  /**
+   * Current view mode (grid or list)
+   */
+  @state()
+  private viewMode: ViewMode = 'grid';
+
   private boundOnBrokersUpdated = this.onBrokersUpdated.bind(this);
   private relativeTimeInterval: ReturnType<typeof setInterval> | null = null;
 
-  static override styles = css`
-    :host {
-      display: block;
-    }
+  static override styles = [
+    listPageStyles,
+    css`
+      .broker-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        margin-bottom: 1rem;
+      }
 
-    .header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 1.5rem;
-    }
+      .broker-version {
+        font-size: 0.875rem;
+        color: var(--scion-text-muted, #64748b);
+        margin-top: 0.25rem;
+        font-family: var(--scion-font-mono, monospace);
+      }
 
-    .header h1 {
-      font-size: 1.5rem;
-      font-weight: 700;
-      color: var(--scion-text, #1e293b);
-      margin: 0;
-    }
+      .broker-details {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        margin-top: 1rem;
+        padding-top: 1rem;
+        border-top: 1px solid var(--scion-border, #e2e8f0);
+      }
 
-    .broker-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-      gap: 1.5rem;
-    }
+      .capability-tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        padding: 0.25rem 0.5rem;
+        border-radius: var(--scion-radius, 0.5rem);
+        font-size: 0.75rem;
+        font-weight: 500;
+        background: var(--scion-bg-subtle, #f1f5f9);
+        color: var(--scion-text-muted, #64748b);
+      }
 
-    .broker-card {
-      background: var(--scion-surface, #ffffff);
-      border: 1px solid var(--scion-border, #e2e8f0);
-      border-radius: var(--scion-radius-lg, 0.75rem);
-      padding: 1.5rem;
-      transition: all var(--scion-transition-fast, 150ms ease);
-      cursor: pointer;
-      text-decoration: none;
-      color: inherit;
-      display: block;
-    }
+      .capability-tag.enabled {
+        background: var(--sl-color-success-100, #dcfce7);
+        color: var(--sl-color-success-700, #15803d);
+      }
 
-    .broker-card:hover {
-      border-color: var(--scion-primary, #3b82f6);
-      box-shadow: var(--scion-shadow-md, 0 4px 6px -1px rgba(0, 0, 0, 0.1));
-      transform: translateY(-2px);
-    }
+      .broker-meta {
+        display: flex;
+        gap: 1.5rem;
+        margin-top: 1rem;
+        padding-top: 1rem;
+        border-top: 1px solid var(--scion-border, #e2e8f0);
+      }
 
-    .broker-header {
-      display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
-      margin-bottom: 1rem;
-    }
-
-    .broker-name {
-      font-size: 1.125rem;
-      font-weight: 600;
-      color: var(--scion-text, #1e293b);
-      margin: 0;
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-    }
-
-    .broker-name sl-icon {
-      color: var(--scion-primary, #3b82f6);
-    }
-
-    .broker-version {
-      font-size: 0.875rem;
-      color: var(--scion-text-muted, #64748b);
-      margin-top: 0.25rem;
-      font-family: var(--scion-font-mono, monospace);
-    }
-
-    .broker-details {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.5rem;
-      margin-top: 1rem;
-      padding-top: 1rem;
-      border-top: 1px solid var(--scion-border, #e2e8f0);
-    }
-
-    .capability-tag {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.25rem;
-      padding: 0.25rem 0.5rem;
-      border-radius: var(--scion-radius, 0.5rem);
-      font-size: 0.75rem;
-      font-weight: 500;
-      background: var(--scion-bg-subtle, #f1f5f9);
-      color: var(--scion-text-muted, #64748b);
-    }
-
-    .capability-tag.enabled {
-      background: var(--sl-color-success-100, #dcfce7);
-      color: var(--sl-color-success-700, #15803d);
-    }
-
-    .broker-meta {
-      display: flex;
-      gap: 1.5rem;
-      margin-top: 1rem;
-      padding-top: 1rem;
-      border-top: 1px solid var(--scion-border, #e2e8f0);
-    }
-
-    .stat {
-      display: flex;
-      flex-direction: column;
-    }
-
-    .stat-label {
-      font-size: 0.75rem;
-      color: var(--scion-text-muted, #64748b);
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
-
-    .stat-value {
-      font-size: 0.875rem;
-      font-weight: 500;
-      color: var(--scion-text, #1e293b);
-    }
-
-    .empty-state {
-      text-align: center;
-      padding: 4rem 2rem;
-      background: var(--scion-surface, #ffffff);
-      border: 1px dashed var(--scion-border, #e2e8f0);
-      border-radius: var(--scion-radius-lg, 0.75rem);
-    }
-
-    .empty-state > sl-icon {
-      font-size: 4rem;
-      color: var(--scion-text-muted, #64748b);
-      opacity: 0.5;
-      margin-bottom: 1rem;
-    }
-
-    .empty-state h2 {
-      font-size: 1.25rem;
-      font-weight: 600;
-      color: var(--scion-text, #1e293b);
-      margin: 0 0 0.5rem 0;
-    }
-
-    .empty-state p {
-      color: var(--scion-text-muted, #64748b);
-      margin: 0;
-    }
-
-    .loading-state {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 4rem 2rem;
-      color: var(--scion-text-muted, #64748b);
-    }
-
-    .loading-state sl-spinner {
-      font-size: 2rem;
-      margin-bottom: 1rem;
-    }
-
-    .error-state {
-      text-align: center;
-      padding: 3rem 2rem;
-      background: var(--scion-surface, #ffffff);
-      border: 1px solid var(--sl-color-danger-200, #fecaca);
-      border-radius: var(--scion-radius-lg, 0.75rem);
-    }
-
-    .error-state sl-icon {
-      font-size: 3rem;
-      color: var(--sl-color-danger-500, #ef4444);
-      margin-bottom: 1rem;
-    }
-
-    .error-state h2 {
-      font-size: 1.25rem;
-      font-weight: 600;
-      color: var(--scion-text, #1e293b);
-      margin: 0 0 0.5rem 0;
-    }
-
-    .error-state p {
-      color: var(--scion-text-muted, #64748b);
-      margin: 0 0 1rem 0;
-    }
-
-    .error-details {
-      font-family: var(--scion-font-mono, monospace);
-      font-size: 0.875rem;
-      background: var(--scion-bg-subtle, #f1f5f9);
-      padding: 0.75rem 1rem;
-      border-radius: var(--scion-radius, 0.5rem);
-      color: var(--sl-color-danger-700, #b91c1c);
-      margin-bottom: 1rem;
-    }
-  `;
+      /* Table-specific inline capability tags */
+      .capability-tags-inline {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.25rem;
+      }
+    `,
+  ];
 
   override connectedCallback(): void {
     super.connectedCallback();
+
+    // Read persisted view mode
+    const stored = localStorage.getItem('scion-view-brokers') as ViewMode | null;
+    if (stored === 'grid' || stored === 'list') {
+      this.viewMode = stored;
+    }
+
     void this.loadBrokers();
 
     // Subscribe to broker SSE events
@@ -357,10 +232,21 @@ export class ScionPageBrokers extends LitElement {
     }
   }
 
+  private onViewChange(e: CustomEvent<{ view: ViewMode }>): void {
+    this.viewMode = e.detail.view;
+  }
+
   override render() {
     return html`
       <div class="header">
         <h1>Brokers</h1>
+        <div class="header-actions">
+          <scion-view-toggle
+            .view=${this.viewMode}
+            storageKey="scion-view-brokers"
+            @view-change=${this.onViewChange}
+          ></scion-view-toggle>
+        </div>
       </div>
 
       ${this.loading
@@ -400,9 +286,7 @@ export class ScionPageBrokers extends LitElement {
       return this.renderEmptyState();
     }
 
-    return html`
-      <div class="broker-grid">${this.brokers.map((broker) => this.renderBrokerCard(broker))}</div>
-    `;
+    return this.viewMode === 'grid' ? this.renderGrid() : this.renderTable();
   }
 
   private renderEmptyState() {
@@ -418,12 +302,18 @@ export class ScionPageBrokers extends LitElement {
     `;
   }
 
+  private renderGrid() {
+    return html`
+      <div class="resource-grid">${this.brokers.map((broker) => this.renderBrokerCard(broker))}</div>
+    `;
+  }
+
   private renderBrokerCard(broker: RuntimeBroker) {
     return html`
-      <a href="/brokers/${broker.id}" class="broker-card">
+      <a href="/brokers/${broker.id}" class="resource-card">
         <div class="broker-header">
           <div>
-            <h3 class="broker-name">
+            <h3 class="resource-name">
               <sl-icon name="hdd-rack"></sl-icon>
               ${broker.name}
             </h3>
@@ -470,6 +360,71 @@ export class ScionPageBrokers extends LitElement {
         <span class="capability-tag ${capabilities.sync ? 'enabled' : ''}">Sync</span>
         <span class="capability-tag ${capabilities.attach ? 'enabled' : ''}">Attach</span>
       </div>
+    `;
+  }
+
+  private renderTable() {
+    return html`
+      <div class="resource-table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th class="hide-mobile">Version</th>
+              <th>Status</th>
+              <th class="hide-mobile">Capabilities</th>
+              <th>Last Heartbeat</th>
+              <th class="hide-mobile">Profiles</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${this.brokers.map((broker) => this.renderBrokerRow(broker))}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  private renderBrokerRow(broker: RuntimeBroker) {
+    return html`
+      <tr class="clickable" @click=${() => {
+        window.history.pushState({}, '', `/brokers/${broker.id}`);
+        window.dispatchEvent(new PopStateEvent('popstate'));
+      }}>
+        <td>
+          <span class="name-cell">
+            <sl-icon name="hdd-rack"></sl-icon>
+            ${broker.name}
+          </span>
+        </td>
+        <td class="hide-mobile">
+          ${broker.version ? html`<span class="mono-cell">v${broker.version}</span>` : '\u2014'}
+        </td>
+        <td>
+          <scion-status-badge
+            status=${this.getStatusVariant(broker.status)}
+            label=${broker.status}
+            size="small"
+          ></scion-status-badge>
+        </td>
+        <td class="hide-mobile">
+          ${broker.capabilities
+            ? html`
+                <span class="capability-tags-inline">
+                  <span class="capability-tag ${broker.capabilities.webPTY ? 'enabled' : ''}">WebPTY</span>
+                  <span class="capability-tag ${broker.capabilities.sync ? 'enabled' : ''}">Sync</span>
+                  <span class="capability-tag ${broker.capabilities.attach ? 'enabled' : ''}">Attach</span>
+                </span>
+              `
+            : '\u2014'}
+        </td>
+        <td>
+          <span class="meta-text">${this.formatRelativeTime(broker.lastHeartbeat)}</span>
+        </td>
+        <td class="hide-mobile">
+          ${broker.profiles ? broker.profiles.length : '\u2014'}
+        </td>
+      </tr>
     `;
   }
 }

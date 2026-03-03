@@ -27,6 +27,9 @@ import type { PageData, Grove, Capabilities } from '../../shared/types.js';
 import { can } from '../../shared/types.js';
 import { apiFetch } from '../../client/api.js';
 import { stateManager } from '../../client/state.js';
+import { listPageStyles } from '../shared/resource-styles.js';
+import type { ViewMode } from '../shared/view-toggle.js';
+import '../shared/view-toggle.js';
 
 @customElement('scion-page-groves')
 export class ScionPageGroves extends LitElement {
@@ -60,186 +63,55 @@ export class ScionPageGroves extends LitElement {
   @state()
   private scopeCapabilities: Capabilities | undefined;
 
-  static override styles = css`
-    :host {
-      display: block;
-    }
+  /**
+   * Current view mode (grid or list)
+   */
+  @state()
+  private viewMode: ViewMode = 'grid';
 
-    .header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 1.5rem;
-    }
+  static override styles = [
+    listPageStyles,
+    css`
+      .grove-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        margin-bottom: 1rem;
+      }
 
-    .header h1 {
-      font-size: 1.5rem;
-      font-weight: 700;
-      color: var(--scion-text, #1e293b);
-      margin: 0;
-    }
+      .grove-path {
+        font-size: 0.875rem;
+        color: var(--scion-text-muted, #64748b);
+        margin-top: 0.25rem;
+        font-family: var(--scion-font-mono, monospace);
+        word-break: break-all;
+      }
 
-    .grove-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-      gap: 1.5rem;
-    }
+      .grove-stats {
+        display: flex;
+        gap: 1.5rem;
+        margin-top: 1rem;
+        padding-top: 1rem;
+        border-top: 1px solid var(--scion-border, #e2e8f0);
+      }
 
-    .grove-card {
-      background: var(--scion-surface, #ffffff);
-      border: 1px solid var(--scion-border, #e2e8f0);
-      border-radius: var(--scion-radius-lg, 0.75rem);
-      padding: 1.5rem;
-      transition: all var(--scion-transition-fast, 150ms ease);
-      cursor: pointer;
-      text-decoration: none;
-      color: inherit;
-      display: block;
-    }
-
-    .grove-card:hover {
-      border-color: var(--scion-primary, #3b82f6);
-      box-shadow: var(--scion-shadow-md, 0 4px 6px -1px rgba(0, 0, 0, 0.1));
-      transform: translateY(-2px);
-    }
-
-    .grove-header {
-      display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
-      margin-bottom: 1rem;
-    }
-
-    .grove-name {
-      font-size: 1.125rem;
-      font-weight: 600;
-      color: var(--scion-text, #1e293b);
-      margin: 0;
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-    }
-
-    .grove-name sl-icon {
-      color: var(--scion-primary, #3b82f6);
-    }
-
-    .grove-path {
-      font-size: 0.875rem;
-      color: var(--scion-text-muted, #64748b);
-      margin-top: 0.25rem;
-      font-family: var(--scion-font-mono, monospace);
-      word-break: break-all;
-    }
-
-    .grove-stats {
-      display: flex;
-      gap: 1.5rem;
-      margin-top: 1rem;
-      padding-top: 1rem;
-      border-top: 1px solid var(--scion-border, #e2e8f0);
-    }
-
-    .stat {
-      display: flex;
-      flex-direction: column;
-    }
-
-    .stat-label {
-      font-size: 0.75rem;
-      color: var(--scion-text-muted, #64748b);
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
-
-    .stat-value {
-      font-size: 1.25rem;
-      font-weight: 600;
-      color: var(--scion-text, #1e293b);
-    }
-
-    .empty-state {
-      text-align: center;
-      padding: 4rem 2rem;
-      background: var(--scion-surface, #ffffff);
-      border: 1px dashed var(--scion-border, #e2e8f0);
-      border-radius: var(--scion-radius-lg, 0.75rem);
-    }
-
-    .empty-state > sl-icon {
-      font-size: 4rem;
-      color: var(--scion-text-muted, #64748b);
-      opacity: 0.5;
-      margin-bottom: 1rem;
-    }
-
-    .empty-state h2 {
-      font-size: 1.25rem;
-      font-weight: 600;
-      color: var(--scion-text, #1e293b);
-      margin: 0 0 0.5rem 0;
-    }
-
-    .empty-state p {
-      color: var(--scion-text-muted, #64748b);
-      margin: 0 0 1.5rem 0;
-    }
-
-    .loading-state {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 4rem 2rem;
-      color: var(--scion-text-muted, #64748b);
-    }
-
-    .loading-state sl-spinner {
-      font-size: 2rem;
-      margin-bottom: 1rem;
-    }
-
-    .error-state {
-      text-align: center;
-      padding: 3rem 2rem;
-      background: var(--scion-surface, #ffffff);
-      border: 1px solid var(--sl-color-danger-200, #fecaca);
-      border-radius: var(--scion-radius-lg, 0.75rem);
-    }
-
-    .error-state sl-icon {
-      font-size: 3rem;
-      color: var(--sl-color-danger-500, #ef4444);
-      margin-bottom: 1rem;
-    }
-
-    .error-state h2 {
-      font-size: 1.25rem;
-      font-weight: 600;
-      color: var(--scion-text, #1e293b);
-      margin: 0 0 0.5rem 0;
-    }
-
-    .error-state p {
-      color: var(--scion-text-muted, #64748b);
-      margin: 0 0 1rem 0;
-    }
-
-    .error-details {
-      font-family: var(--scion-font-mono, monospace);
-      font-size: 0.875rem;
-      background: var(--scion-bg-subtle, #f1f5f9);
-      padding: 0.75rem 1rem;
-      border-radius: var(--scion-radius, 0.5rem);
-      color: var(--sl-color-danger-700, #b91c1c);
-      margin-bottom: 1rem;
-    }
-  `;
+      .grove-stats .stat-value {
+        font-size: 1.25rem;
+        font-weight: 600;
+      }
+    `,
+  ];
 
   private boundOnGrovesUpdated = this.onGrovesUpdated.bind(this);
 
   override connectedCallback(): void {
     super.connectedCallback();
+
+    // Read persisted view mode
+    const stored = localStorage.getItem('scion-view-groves') as ViewMode | null;
+    if (stored === 'grid' || stored === 'list') {
+      this.viewMode = stored;
+    }
 
     // Use hydrated data from SSR if available, avoiding the initial fetch.
     const hydratedGroves = stateManager.getGroves();
@@ -331,18 +203,29 @@ export class ScionPageGroves extends LitElement {
     }
   }
 
+  private onViewChange(e: CustomEvent<{ view: ViewMode }>): void {
+    this.viewMode = e.detail.view;
+  }
+
   override render() {
     return html`
       <div class="header">
         <h1>Groves</h1>
-        ${can(this.scopeCapabilities, 'create') ? html`
-          <a href="/groves/new" style="text-decoration: none;">
-            <sl-button variant="primary" size="small">
-              <sl-icon slot="prefix" name="plus-lg"></sl-icon>
-              New Grove
-            </sl-button>
-          </a>
-        ` : nothing}
+        <div class="header-actions">
+          <scion-view-toggle
+            .view=${this.viewMode}
+            storageKey="scion-view-groves"
+            @view-change=${this.onViewChange}
+          ></scion-view-toggle>
+          ${can(this.scopeCapabilities, 'create') ? html`
+            <a href="/groves/new" style="text-decoration: none;">
+              <sl-button variant="primary" size="small">
+                <sl-icon slot="prefix" name="plus-lg"></sl-icon>
+                New Grove
+              </sl-button>
+            </a>
+          ` : nothing}
+        </div>
       </div>
 
       ${this.loading ? this.renderLoading() : this.error ? this.renderError() : this.renderGroves()}
@@ -378,9 +261,7 @@ export class ScionPageGroves extends LitElement {
       return this.renderEmptyState();
     }
 
-    return html`
-      <div class="grove-grid">${this.groves.map((grove) => this.renderGroveCard(grove))}</div>
-    `;
+    return this.viewMode === 'grid' ? this.renderGrid() : this.renderTable();
   }
 
   private renderEmptyState() {
@@ -404,12 +285,18 @@ export class ScionPageGroves extends LitElement {
     `;
   }
 
+  private renderGrid() {
+    return html`
+      <div class="resource-grid">${this.groves.map((grove) => this.renderGroveCard(grove))}</div>
+    `;
+  }
+
   private renderGroveCard(grove: Grove) {
     return html`
-      <a href="/groves/${grove.id}" class="grove-card">
+      <a href="/groves/${grove.id}" class="resource-card">
         <div class="grove-header">
           <div>
-            <h3 class="grove-name">
+            <h3 class="resource-name">
               ${grove.gitRemote
                 ? html`<sl-tooltip content="Git-backed grove"><sl-icon name="diagram-3"></sl-icon></sl-tooltip>`
                 : html`<sl-tooltip content="Hub workspace"><sl-icon name="folder-fill"></sl-icon></sl-tooltip>`}
@@ -431,6 +318,49 @@ export class ScionPageGroves extends LitElement {
           </div>
         </div>
       </a>
+    `;
+  }
+
+  private renderTable() {
+    return html`
+      <div class="resource-table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Path / Remote</th>
+              <th>Agents</th>
+              <th class="hide-mobile">Updated</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${this.groves.map((grove) => this.renderGroveRow(grove))}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  private renderGroveRow(grove: Grove) {
+    return html`
+      <tr class="clickable" @click=${() => {
+        window.history.pushState({}, '', `/groves/${grove.id}`);
+        window.dispatchEvent(new PopStateEvent('popstate'));
+      }}>
+        <td>
+          <span class="name-cell">
+            ${grove.gitRemote
+              ? html`<sl-icon name="diagram-3"></sl-icon>`
+              : html`<sl-icon name="folder-fill"></sl-icon>`}
+            ${grove.name}
+          </span>
+        </td>
+        <td class="mono-cell">${grove.gitRemote || grove.path || 'Hub workspace'}</td>
+        <td>${grove.agentCount}</td>
+        <td class="hide-mobile">
+          <span class="meta-text">${this.formatDate(grove.updatedAt)}</span>
+        </td>
+      </tr>
     `;
   }
 }

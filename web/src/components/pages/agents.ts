@@ -28,7 +28,10 @@ import { can, isTerminalAvailable, getAgentDisplayStatus, isAgentRunning } from 
 import type { StatusType } from '../shared/status-badge.js';
 import { apiFetch } from '../../client/api.js';
 import { stateManager } from '../../client/state.js';
+import { listPageStyles } from '../shared/resource-styles.js';
+import type { ViewMode } from '../shared/view-toggle.js';
 import '../shared/status-badge.js';
+import '../shared/view-toggle.js';
 
 @customElement('scion-page-agents')
 export class ScionPageAgents extends LitElement {
@@ -68,182 +71,90 @@ export class ScionPageAgents extends LitElement {
   @state()
   private scopeCapabilities: Capabilities | undefined;
 
-  static override styles = css`
-    :host {
-      display: block;
-    }
+  /**
+   * Current view mode (grid or list)
+   */
+  @state()
+  private viewMode: ViewMode = 'grid';
 
-    .header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 1.5rem;
-    }
+  static override styles = [
+    listPageStyles,
+    css`
+      .agent-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        margin-bottom: 0.75rem;
+      }
 
-    .header h1 {
-      font-size: 1.5rem;
-      font-weight: 700;
-      color: var(--scion-text, #1e293b);
-      margin: 0;
-    }
+      .agent-meta {
+        font-size: 0.813rem;
+        color: var(--scion-text-muted, #64748b);
+        margin-top: 0.25rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.125rem;
+      }
 
-    .agent-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-      gap: 1.5rem;
-    }
+      .agent-meta sl-icon {
+        font-size: 0.875rem;
+        vertical-align: -0.125em;
+        opacity: 0.7;
+      }
 
-    .agent-card {
-      background: var(--scion-surface, #ffffff);
-      border: 1px solid var(--scion-border, #e2e8f0);
-      border-radius: var(--scion-radius-lg, 0.75rem);
-      padding: 1.5rem;
-      transition: all var(--scion-transition-fast, 150ms ease);
-    }
+      .agent-task {
+        font-size: 0.875rem;
+        color: var(--scion-text, #1e293b);
+        margin-top: 0.75rem;
+        padding: 0.75rem;
+        background: var(--scion-bg-subtle, #f1f5f9);
+        border-radius: var(--scion-radius, 0.5rem);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
 
-    .agent-card:hover {
-      border-color: var(--scion-primary, #3b82f6);
-      box-shadow: var(--scion-shadow-md, 0 4px 6px -1px rgba(0, 0, 0, 0.1));
-    }
+      .agent-actions {
+        display: flex;
+        gap: 0.5rem;
+        margin-top: 1rem;
+        padding-top: 1rem;
+        border-top: 1px solid var(--scion-border, #e2e8f0);
+      }
 
-    .agent-header {
-      display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
-      margin-bottom: 0.75rem;
-    }
+      /* Card-specific: no hover transform for agent cards (they have action buttons) */
+      .agent-card {
+        background: var(--scion-surface, #ffffff);
+        border: 1px solid var(--scion-border, #e2e8f0);
+        border-radius: var(--scion-radius-lg, 0.75rem);
+        padding: 1.5rem;
+        transition: all var(--scion-transition-fast, 150ms ease);
+      }
 
-    .agent-name {
-      font-size: 1.125rem;
-      font-weight: 600;
-      color: var(--scion-text, #1e293b);
-      margin: 0;
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-    }
+      .agent-card:hover {
+        border-color: var(--scion-primary, #3b82f6);
+        box-shadow: var(--scion-shadow-md, 0 4px 6px -1px rgba(0, 0, 0, 0.1));
+      }
 
-    .agent-name sl-icon {
-      color: var(--scion-primary, #3b82f6);
-    }
-
-    .agent-meta {
-      font-size: 0.813rem;
-      color: var(--scion-text-muted, #64748b);
-      margin-top: 0.25rem;
-      display: flex;
-      flex-direction: column;
-      gap: 0.125rem;
-    }
-
-    .agent-meta sl-icon {
-      font-size: 0.875rem;
-      vertical-align: -0.125em;
-      opacity: 0.7;
-    }
-
-    .agent-task {
-      font-size: 0.875rem;
-      color: var(--scion-text, #1e293b);
-      margin-top: 0.75rem;
-      padding: 0.75rem;
-      background: var(--scion-bg-subtle, #f1f5f9);
-      border-radius: var(--scion-radius, 0.5rem);
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .agent-actions {
-      display: flex;
-      gap: 0.5rem;
-      margin-top: 1rem;
-      padding-top: 1rem;
-      border-top: 1px solid var(--scion-border, #e2e8f0);
-    }
-
-    .empty-state {
-      text-align: center;
-      padding: 4rem 2rem;
-      background: var(--scion-surface, #ffffff);
-      border: 1px dashed var(--scion-border, #e2e8f0);
-      border-radius: var(--scion-radius-lg, 0.75rem);
-    }
-
-    .empty-state > sl-icon {
-      font-size: 4rem;
-      color: var(--scion-text-muted, #64748b);
-      opacity: 0.5;
-      margin-bottom: 1rem;
-    }
-
-    .empty-state h2 {
-      font-size: 1.25rem;
-      font-weight: 600;
-      color: var(--scion-text, #1e293b);
-      margin: 0 0 0.5rem 0;
-    }
-
-    .empty-state p {
-      color: var(--scion-text-muted, #64748b);
-      margin: 0 0 1.5rem 0;
-    }
-
-    .loading-state {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 4rem 2rem;
-      color: var(--scion-text-muted, #64748b);
-    }
-
-    .loading-state sl-spinner {
-      font-size: 2rem;
-      margin-bottom: 1rem;
-    }
-
-    .error-state {
-      text-align: center;
-      padding: 3rem 2rem;
-      background: var(--scion-surface, #ffffff);
-      border: 1px solid var(--sl-color-danger-200, #fecaca);
-      border-radius: var(--scion-radius-lg, 0.75rem);
-    }
-
-    .error-state sl-icon {
-      font-size: 3rem;
-      color: var(--sl-color-danger-500, #ef4444);
-      margin-bottom: 1rem;
-    }
-
-    .error-state h2 {
-      font-size: 1.25rem;
-      font-weight: 600;
-      color: var(--scion-text, #1e293b);
-      margin: 0 0 0.5rem 0;
-    }
-
-    .error-state p {
-      color: var(--scion-text-muted, #64748b);
-      margin: 0 0 1rem 0;
-    }
-
-    .error-details {
-      font-family: var(--scion-font-mono, monospace);
-      font-size: 0.875rem;
-      background: var(--scion-bg-subtle, #f1f5f9);
-      padding: 0.75rem 1rem;
-      border-radius: var(--scion-radius, 0.5rem);
-      color: var(--sl-color-danger-700, #b91c1c);
-      margin-bottom: 1rem;
-    }
-  `;
+      /* Table-specific: inline action buttons */
+      .table-actions {
+        display: flex;
+        gap: 0.375rem;
+        justify-content: flex-end;
+      }
+    `,
+  ];
 
   private boundOnAgentsUpdated = this.onAgentsUpdated.bind(this);
 
   override connectedCallback(): void {
     super.connectedCallback();
+
+    // Read persisted view mode
+    const stored = localStorage.getItem('scion-view-agents') as ViewMode | null;
+    if (stored === 'grid' || stored === 'list') {
+      this.viewMode = stored;
+    }
 
     // Use hydrated data from SSR if available, avoiding the initial fetch.
     const hydratedAgents = stateManager.getAgents();
@@ -373,18 +284,29 @@ export class ScionPageAgents extends LitElement {
     }
   }
 
+  private onViewChange(e: CustomEvent<{ view: ViewMode }>): void {
+    this.viewMode = e.detail.view;
+  }
+
   override render() {
     return html`
       <div class="header">
         <h1>Agents</h1>
-        ${can(this.scopeCapabilities, 'create') ? html`
-          <a href="/agents/new" style="text-decoration: none;">
-            <sl-button variant="primary" size="small">
-              <sl-icon slot="prefix" name="plus-lg"></sl-icon>
-              New Agent
-            </sl-button>
-          </a>
-        ` : nothing}
+        <div class="header-actions">
+          <scion-view-toggle
+            .view=${this.viewMode}
+            storageKey="scion-view-agents"
+            @view-change=${this.onViewChange}
+          ></scion-view-toggle>
+          ${can(this.scopeCapabilities, 'create') ? html`
+            <a href="/agents/new" style="text-decoration: none;">
+              <sl-button variant="primary" size="small">
+                <sl-icon slot="prefix" name="plus-lg"></sl-icon>
+                New Agent
+              </sl-button>
+            </a>
+          ` : nothing}
+        </div>
       </div>
 
       ${this.loading ? this.renderLoading() : this.error ? this.renderError() : this.renderAgents()}
@@ -420,9 +342,7 @@ export class ScionPageAgents extends LitElement {
       return this.renderEmptyState();
     }
 
-    return html`
-      <div class="agent-grid">${this.agents.map((agent) => this.renderAgentCard(agent))}</div>
-    `;
+    return this.viewMode === 'grid' ? this.renderGrid() : this.renderTable();
   }
 
   private renderEmptyState() {
@@ -445,6 +365,12 @@ export class ScionPageAgents extends LitElement {
     `;
   }
 
+  private renderGrid() {
+    return html`
+      <div class="resource-grid">${this.agents.map((agent) => this.renderAgentCard(agent))}</div>
+    `;
+  }
+
   private renderAgentCard(agent: Agent) {
     const isLoading = this.actionLoading[agent.id] || false;
 
@@ -452,7 +378,7 @@ export class ScionPageAgents extends LitElement {
       <div class="agent-card">
         <div class="agent-header">
           <div>
-            <h3 class="agent-name">
+            <h3 class="resource-name">
               <sl-icon name="cpu"></sl-icon>
               <a href="/agents/${agent.id}" style="color: inherit; text-decoration: none;">
                 ${agent.name}
@@ -526,6 +452,106 @@ export class ScionPageAgents extends LitElement {
           ` : nothing}
         </div>
       </div>
+    `;
+  }
+
+  private renderTable() {
+    return html`
+      <div class="resource-table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Grove</th>
+              <th class="hide-mobile">Template</th>
+              <th>Status</th>
+              <th class="hide-mobile">Task</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${this.agents.map((agent) => this.renderAgentRow(agent))}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  private renderAgentRow(agent: Agent) {
+    const isLoading = this.actionLoading[agent.id] || false;
+
+    return html`
+      <tr>
+        <td>
+          <span class="name-cell">
+            <sl-icon name="cpu"></sl-icon>
+            <a href="/agents/${agent.id}">${agent.name}</a>
+          </span>
+        </td>
+        <td>${agent.grove || '\u2014'}</td>
+        <td class="hide-mobile">${agent.template}</td>
+        <td>
+          <scion-status-badge
+            status=${getAgentDisplayStatus(agent) as StatusType}
+            label=${getAgentDisplayStatus(agent)}
+            size="small"
+          ></scion-status-badge>
+        </td>
+        <td class="hide-mobile">
+          <span class="task-cell">${agent.taskSummary || '\u2014'}</span>
+        </td>
+        <td class="actions-cell">
+          <span class="table-actions">
+            ${can(agent._capabilities, 'attach') ? html`
+              <sl-button
+                variant="primary"
+                size="small"
+                href="/agents/${agent.id}/terminal"
+                ?disabled=${!isTerminalAvailable(agent)}
+              >
+                <sl-icon slot="prefix" name="terminal"></sl-icon>
+              </sl-button>
+            ` : nothing}
+            ${isAgentRunning(agent)
+              ? can(agent._capabilities, 'stop') ? html`
+                  <sl-button
+                    variant="danger"
+                    size="small"
+                    outline
+                    ?loading=${isLoading}
+                    ?disabled=${isLoading}
+                    @click=${() => this.handleAgentAction(agent.id, 'stop')}
+                  >
+                    <sl-icon slot="prefix" name="stop-circle"></sl-icon>
+                  </sl-button>
+                ` : nothing
+              : can(agent._capabilities, 'start') ? html`
+                  <sl-button
+                    variant="success"
+                    size="small"
+                    outline
+                    ?loading=${isLoading}
+                    ?disabled=${isLoading}
+                    @click=${() => this.handleAgentAction(agent.id, 'start')}
+                  >
+                    <sl-icon slot="prefix" name="play-circle"></sl-icon>
+                  </sl-button>
+                ` : nothing}
+            ${can(agent._capabilities, 'delete') ? html`
+              <sl-button
+                variant="default"
+                size="small"
+                outline
+                ?loading=${isLoading}
+                ?disabled=${isLoading}
+                @click=${() => this.handleAgentAction(agent.id, 'delete')}
+              >
+                <sl-icon slot="prefix" name="trash"></sl-icon>
+              </sl-button>
+            ` : nothing}
+          </span>
+        </td>
+      </tr>
     `;
   }
 }
