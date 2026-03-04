@@ -1,6 +1,6 @@
 # Agent Auth Refactor
 
-## Status: Complete (Phase 1-5)
+## Status: Complete
 
 ## Problem Statement
 
@@ -338,10 +338,10 @@ For file-type secrets, the Hub stores base64-encoded content and the runtime pro
 - Each harness's `ResolveAuth()` already produces clear, actionable error messages (done in Step 3)
 - Env-gather integration via `RequiredEnvKeys()` + `extractRequiredEnvKeys()` already in place (done in Steps 3-4)
 
-### Step 7: Documentation
-- Document the auth resolution flow and per-harness preference orders
-- Document the hub secret name → AuthConfig field mapping
-- Document how to configure each auth method (API key, Vertex, OAuth, ADC) for each harness
+### Step 7: Documentation ✅
+- Created `.design/agent-credentials.md` — technical design reference for the credential resolution architecture
+- Created `docs-site/src/content/docs/guides/agent-credentials.md` — user-facing guide for configuring agent credentials
+- Added "Agent Credentials" to docs-site sidebar under Developer Guide > How To
 
 ## Decisions
 
