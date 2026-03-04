@@ -281,6 +281,23 @@ func TestAgentStalledDetectionHandler_StalledFromActivityIsPreserved(t *testing.
 	}
 }
 
+func TestNew_DefaultsStalledThresholdWhenZero(t *testing.T) {
+	s, err := sqlite.New(":memory:")
+	if err != nil {
+		t.Fatalf("failed to create test store: %v", err)
+	}
+	if err := s.Migrate(context.Background()); err != nil {
+		t.Fatalf("failed to migrate test store: %v", err)
+	}
+	t.Cleanup(func() { s.Close() })
+
+	// Create server with zero StalledThreshold (simulates cmd/server.go omission)
+	srv := New(ServerConfig{}, s)
+	if srv.config.StalledThreshold != 5*time.Minute {
+		t.Errorf("StalledThreshold = %v, want %v", srv.config.StalledThreshold, 5*time.Minute)
+	}
+}
+
 func TestAgentStalledDetectionHandler_SchedulerIntegration(t *testing.T) {
 	srv, s, _ := setupStalledTestServer(t)
 

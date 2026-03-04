@@ -382,6 +382,12 @@ type Server struct {
 
 // New creates a new Hub API server.
 func New(cfg ServerConfig, s store.Store) *Server {
+	// Apply defaults for zero-value fields that have meaningful defaults.
+	defaults := DefaultServerConfig()
+	if cfg.StalledThreshold == 0 {
+		cfg.StalledThreshold = defaults.StalledThreshold
+	}
+
 	srv := &Server{
 		config:      cfg,
 		store:       s,
