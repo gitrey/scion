@@ -287,6 +287,44 @@ func TestManifestBuilder_IncludesDotfiles(t *testing.T) {
 	}
 }
 
+func TestCollectFiles_SkipsSymlinks(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create a regular file
+	if err := os.WriteFile(filepath.Join(dir, "real.txt"), []byte("content"), 0644); err != nil {
+		t.Fatalf("failed to create file: %v", err)
+	}
+
+	// Create a valid symlink
+	validTarget := filepath.Join(dir, "real.txt")
+	if err := os.Symlink(validTarget, filepath.Join(dir, "valid-link")); err != nil {
+		t.Fatalf("failed to create valid symlink: %v", err)
+	}
+
+	// Create a dangling symlink (like .claude/debug/latest)
+	if err := os.Symlink("/nonexistent/path", filepath.Join(dir, "dangling-link")); err != nil {
+		t.Fatalf("failed to create dangling symlink: %v", err)
+	}
+
+	files, err := CollectFiles(dir, nil)
+	if err != nil {
+		t.Fatalf("CollectFiles failed: %v", err)
+	}
+
+	// Should only include the real file, not any symlinks
+	if len(files) != 1 {
+		names := make([]string, len(files))
+		for i, f := range files {
+			names[i] = f.Path
+		}
+		t.Errorf("expected 1 file (skipping symlinks), got %d: %v", len(files), names)
+	}
+
+	if files[0].Path != "real.txt" {
+		t.Errorf("expected real.txt, got %s", files[0].Path)
+	}
+}
+
 func TestBuildManifest_Empty(t *testing.T) {
 	manifest := BuildManifest([]FileInfo{})
 

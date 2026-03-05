@@ -17,6 +17,7 @@ package transfer
 import (
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -103,6 +104,12 @@ func (b *ManifestBuilder) CollectFiles() ([]FileInfo, error) {
 
 		// Skip directories (only collect files)
 		if d.IsDir() {
+			return nil
+		}
+
+		// Skip symlinks — they may be dangling (e.g. .claude/debug/latest)
+		// and cannot be meaningfully transferred between environments.
+		if d.Type()&os.ModeSymlink != 0 {
 			return nil
 		}
 
