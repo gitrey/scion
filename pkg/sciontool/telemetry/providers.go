@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 
+	mexporter "github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric"
 	texporter "github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/trace"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc"
@@ -75,9 +76,10 @@ func buildResource(ctx context.Context) (*resource.Resource, error) {
 	return res, nil
 }
 
-// newGCPProviders creates providers using the GCP-native trace exporter.
+// newGCPProviders creates providers using GCP-native exporters.
+// Traces use the Cloud Trace exporter directly.
 // Logs use OTLP to the local receiver (pipeline handles Cloud Logging forwarding).
-// Metrics use the GCP metric exporter via the SDK.
+// Metrics use the Cloud Monitoring exporter directly.
 func newGCPProviders(ctx context.Context, config *Config, res *resource.Resource, batch bool) (*Providers, error) {
 	clientOpts := []option.ClientOption{}
 	if config.GCPCredentialsFile != "" {
@@ -96,7 +98,7 @@ func newGCPProviders(ctx context.Context, config *Config, res *resource.Resource
 		return nil, fmt.Errorf("creating GCP trace exporter: %w", err)
 	}
 
-	// For logs and metrics, export to the local OTLP receiver (pipeline forwards to GCP)
+	// Logs export to the local OTLP receiver (pipeline forwards to Cloud Logging)
 	logExporter, err := otlploggrpc.New(ctx,
 		otlploggrpc.WithEndpoint(fmt.Sprintf("localhost:%d", config.GRPCPort)),
 		otlploggrpc.WithInsecure(),
@@ -106,14 +108,18 @@ func newGCPProviders(ctx context.Context, config *Config, res *resource.Resource
 		return nil, fmt.Errorf("creating log exporter: %w", err)
 	}
 
-	metricExporter, err := otlpmetricgrpc.New(ctx,
-		otlpmetricgrpc.WithEndpoint(fmt.Sprintf("localhost:%d", config.GRPCPort)),
-		otlpmetricgrpc.WithInsecure(),
-	)
+	// Metrics use the GCP Cloud Monitoring exporter (direct to Cloud Monitoring API)
+	metricOpts := []mexporter.Option{
+		mexporter.WithProjectID(config.ProjectID),
+	}
+	if len(clientOpts) > 0 {
+		metricOpts = append(metricOpts, mexporter.WithMonitoringClientOptions(clientOpts...))
+	}
+	metricExporter, err := mexporter.New(metricOpts...)
 	if err != nil {
 		_ = traceExporter.Shutdown(ctx)
 		_ = logExporter.Shutdown(ctx)
-		return nil, fmt.Errorf("creating metric exporter: %w", err)
+		return nil, fmt.Errorf("creating GCP metric exporter: %w", err)
 	}
 
 	return buildProviders(res, traceExporter, logExporter, metricExporter, batch), nil

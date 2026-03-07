@@ -99,12 +99,10 @@ func (e *GCPExporter) ExportProtoSpans(ctx context.Context, resourceSpans []*tra
 
 // ExportProtoMetrics is a no-op for the GCP exporter.
 //
-// In GCP-native mode, metrics are exported directly by the SDK MeterProvider
-// configured in providers.go (using the GCP metric exporter), which requires
-// SDK metricdata types. The pipeline receives OTLP proto-format metrics from
-// agents, but converting between proto and SDK metric types is not supported,
-// so pipeline-received metrics are silently dropped here. The actual metrics
-// still reach GCP via each agent's own MeterProvider export path.
+// In GCP-native mode, metrics are exported directly by each agent's SDK
+// MeterProvider via the Cloud Monitoring exporter (configured in providers.go).
+// Pipeline-received OTLP proto metrics are dropped here since they cannot be
+// converted to the SDK metricdata types required by the Cloud Monitoring API.
 func (e *GCPExporter) ExportProtoMetrics(ctx context.Context, resourceMetrics []*metricpb.ResourceMetrics) error {
 	return nil
 }

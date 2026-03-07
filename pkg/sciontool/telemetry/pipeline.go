@@ -228,8 +228,8 @@ func (p *Pipeline) handleMetrics(ctx context.Context, resourceMetrics []*metricp
 	}
 
 	// Forward to cloud exporter if available. Note: in GCP-native mode,
-	// ExportProtoMetrics is a no-op — metrics reach GCP via the SDK
-	// MeterProvider, not through pipeline forwarding.
+	// ExportProtoMetrics is a no-op — metrics reach GCP directly via
+	// each agent's Cloud Monitoring exporter, not through the pipeline.
 	if p.exporter != nil {
 		if err := p.exporter.ExportProtoMetrics(ctx, resourceMetrics); err != nil {
 			log.Error("Failed to export metrics to cloud: %v", err)
