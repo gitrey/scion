@@ -187,6 +187,104 @@ func TestCodexInjectSystemPrompt_NoOp(t *testing.T) {
 	}
 }
 
+func TestCodexApplyAuthSettings_APIKeyWritesAuthFile(t *testing.T) {
+	agentHome := t.TempDir()
+	c := &Codex{}
+
+	resolved := &api.ResolvedAuth{
+		Method:  "api-key",
+		EnvVars: map[string]string{"OPENAI_API_KEY": "test-key-value"},
+	}
+
+	if err := c.ApplyAuthSettings(agentHome, resolved); err != nil {
+		t.Fatalf("ApplyAuthSettings failed: %v", err)
+	}
+
+	authPath := filepath.Join(agentHome, ".codex", "auth.json")
+	data, err := os.ReadFile(authPath)
+	if err != nil {
+		t.Fatalf("expected auth.json at %s: %v", authPath, err)
+	}
+
+	var parsed map[string]string
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("failed to parse auth.json: %v", err)
+	}
+	if parsed["auth_mode"] != "apikey" {
+		t.Errorf("auth_mode = %q, want %q", parsed["auth_mode"], "apikey")
+	}
+	if parsed["OPENAI_API_KEY"] != "test-key-value" {
+		t.Errorf("OPENAI_API_KEY = %q, want %q", parsed["OPENAI_API_KEY"], "test-key-value")
+	}
+
+	// Verify file permissions are restrictive (0600)
+	info, err := os.Stat(authPath)
+	if err != nil {
+		t.Fatalf("failed to stat auth.json: %v", err)
+	}
+	if perm := info.Mode().Perm(); perm != 0600 {
+		t.Errorf("auth.json permissions = %o, want 0600", perm)
+	}
+}
+
+func TestCodexApplyAuthSettings_CodexAPIKeyWritesAuthFile(t *testing.T) {
+	agentHome := t.TempDir()
+	c := &Codex{}
+
+	resolved := &api.ResolvedAuth{
+		Method:  "api-key",
+		EnvVars: map[string]string{"CODEX_API_KEY": "codex-test-key"},
+	}
+
+	if err := c.ApplyAuthSettings(agentHome, resolved); err != nil {
+		t.Fatalf("ApplyAuthSettings failed: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(agentHome, ".codex", "auth.json"))
+	if err != nil {
+		t.Fatalf("expected auth.json: %v", err)
+	}
+
+	var parsed map[string]string
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("failed to parse auth.json: %v", err)
+	}
+	if parsed["auth_mode"] != "apikey" {
+		t.Errorf("auth_mode = %q, want %q", parsed["auth_mode"], "apikey")
+	}
+	if parsed["OPENAI_API_KEY"] != "codex-test-key" {
+		t.Errorf("OPENAI_API_KEY = %q, want %q", parsed["OPENAI_API_KEY"], "codex-test-key")
+	}
+}
+
+func TestCodexApplyAuthSettings_NonAPIKeyNoOp(t *testing.T) {
+	agentHome := t.TempDir()
+	c := &Codex{}
+
+	resolved := &api.ResolvedAuth{
+		Method: "auth-file",
+		Files: []api.FileMapping{
+			{SourcePath: "/some/path", ContainerPath: "~/.codex/auth.json"},
+		},
+	}
+
+	if err := c.ApplyAuthSettings(agentHome, resolved); err != nil {
+		t.Fatalf("ApplyAuthSettings failed: %v", err)
+	}
+
+	authPath := filepath.Join(agentHome, ".codex", "auth.json")
+	if _, err := os.Stat(authPath); !os.IsNotExist(err) {
+		t.Errorf("auth.json should not exist for auth-file method")
+	}
+}
+
+func TestCodexApplyAuthSettings_NilResolvedNoOp(t *testing.T) {
+	c := &Codex{}
+	if err := c.ApplyAuthSettings(t.TempDir(), nil); err != nil {
+		t.Fatalf("ApplyAuthSettings with nil should not error: %v", err)
+	}
+}
+
 func TestCodexApplyTelemetrySettings_EnabledMergesOtelAndPreservesKeys(t *testing.T) {
 	agentHome := t.TempDir()
 	c := &Codex{}

@@ -199,6 +199,40 @@ func (c *Codex) ResolveAuth(auth api.AuthConfig) (*api.ResolvedAuth, error) {
 	return nil, fmt.Errorf("codex: no valid auth method found; set CODEX_API_KEY or OPENAI_API_KEY, or provide auth credentials at ~/.codex/auth.json")
 }
 
+func (c *Codex) ApplyAuthSettings(agentHome string, resolved *api.ResolvedAuth) error {
+	if resolved == nil || resolved.Method != "api-key" {
+		return nil
+	}
+
+	// Extract the API key from whichever env var was resolved.
+	var apiKey string
+	for _, k := range []string{"CODEX_API_KEY", "OPENAI_API_KEY"} {
+		if v := resolved.EnvVars[k]; v != "" {
+			apiKey = v
+			break
+		}
+	}
+	if apiKey == "" {
+		return nil
+	}
+
+	codexDir := filepath.Join(agentHome, ".codex")
+	if err := os.MkdirAll(codexDir, 0755); err != nil {
+		return fmt.Errorf("failed to create .codex directory: %w", err)
+	}
+
+	authData := map[string]string{
+		"auth_mode":      "apikey",
+		"OPENAI_API_KEY": apiKey,
+	}
+	data, err := json.MarshalIndent(authData, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal auth.json: %w", err)
+	}
+	authPath := filepath.Join(codexDir, "auth.json")
+	return os.WriteFile(authPath, append(data, '\n'), 0600)
+}
+
 func (c *Codex) InjectSystemPrompt(agentHome string, content []byte) error {
 	// TODO: Codex has no native system prompt support. System prompt injection is
 	// not yet implemented for this harness.
