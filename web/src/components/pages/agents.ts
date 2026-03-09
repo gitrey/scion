@@ -174,21 +174,22 @@ export class ScionPageAgents extends LitElement {
       this.viewMode = stored;
     }
 
+    // Set SSE scope to dashboard (all grove summaries).
+    // This must happen before checking hydrated data because setScope clears
+    // state maps when the scope changes (e.g. from agent-detail to dashboard).
+    stateManager.setScope({ type: 'dashboard' });
+
     // Use hydrated data from SSR if available, avoiding the initial fetch.
+    // Only trust it when scope was previously null (initial SSR page load);
+    // on client-side navigations the maps were just cleared by setScope above.
     const hydratedAgents = stateManager.getAgents();
     if (hydratedAgents.length > 0) {
       this.agents = hydratedAgents;
       this.scopeCapabilities = stateManager.getScopeCapabilities();
       this.loading = false;
+      stateManager.seedAgents(this.agents);
     } else {
       void this.loadAgents();
-    }
-
-    // Set SSE scope to dashboard (all grove summaries).
-    // setScope clears state maps, so re-seed with any loaded agents afterward.
-    stateManager.setScope({ type: 'dashboard' });
-    if (this.agents.length > 0) {
-      stateManager.seedAgents(this.agents);
     }
 
     // Listen for real-time agent updates

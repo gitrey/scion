@@ -113,18 +113,23 @@ export class ScionPageGroves extends LitElement {
       this.viewMode = stored;
     }
 
+    // Set SSE scope to dashboard (grove summaries).
+    // This must happen before checking hydrated data because setScope clears
+    // state maps when the scope changes (e.g. from grove-detail to dashboard).
+    stateManager.setScope({ type: 'dashboard' });
+
     // Use hydrated data from SSR if available, avoiding the initial fetch.
+    // Only trust it when scope was previously null (initial SSR page load);
+    // on client-side navigations the maps were just cleared by setScope above.
     const hydratedGroves = stateManager.getGroves();
     if (hydratedGroves.length > 0) {
       this.groves = hydratedGroves;
       this.scopeCapabilities = stateManager.getScopeCapabilities();
       this.loading = false;
+      stateManager.seedGroves(this.groves);
     } else {
       void this.loadGroves();
     }
-
-    // Set SSE scope to dashboard (grove summaries)
-    stateManager.setScope({ type: 'dashboard' });
 
     // Listen for real-time grove updates
     stateManager.addEventListener('groves-updated', this.boundOnGrovesUpdated as EventListener);
