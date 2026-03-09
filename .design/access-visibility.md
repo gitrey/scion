@@ -38,7 +38,15 @@ const (
 **Enforced for access control**: **No**. The `AuthzService.CheckAccess()` method in `pkg/hub/authz.go` evaluates policies, owner bypass, and admin bypass -- but never examines the visibility field. Visibility is purely metadata today.
 
 ### 1.3 Terminology Divergence
+<!--  feedback; we should modify the terms to be 'grove-team' to refer to all members of the grove group 
 
+and 'public' -> everyone - subtle, but public makes it sound like open to all outside the hub user set
+
+where everyone slightly implies that everyone who is "here" on the hub
+
+visibililty does a good job of capturing the read-only
+
+We can improve this by including "who can see this (changes are sill guarded by other policy) -->
 There is an inconsistency in the middle-tier visibility value:
 
 | Resource | Middle Tier |
@@ -98,6 +106,7 @@ Explicit policies always override these defaults. A deny policy can restrict acc
 The design documents suggest (but do not mandate) that agent visibility could inherit from or be constrained by the parent grove:
 
 - An agent in a `team` grove could default to `team` visibility
+<!-- feedback; yes - agents become implicit group (team) members for the grove -->
 - An agent should not have broader visibility than its grove (a `public` agent in a `private` grove would be contradictory)
 
 ---
@@ -112,7 +121,8 @@ The design documents suggest (but do not mandate) that agent visibility could in
 
 Standardize on `private`, `team`, `public` for all resource types. Update templates and harness configs to use `team` instead of `grove` for the middle tier.
 
-**Changes**:
+<!-- feedback - to clarify - the association of grove with template and harness configs is more than just visibility no? Is there not some degree of "attachment" or association. That is, a grove based template is available to be used only in that grove, and would show up in the list of templates only when creating an agent in that grove? -->
+
 - `pkg/store/models.go`: Update Template and HarnessConfig comments from "private, grove, public" to "private, team, public"
 - `pkg/hub/template_handlers.go`: Accept `grove` as an alias for `team` on input (backwards compatibility), but always store and return `team`
 - `pkg/hub/harness_config_handlers.go`: Same treatment
@@ -338,6 +348,8 @@ Visibility should not bypass the policy engine. Instead, it should be evaluated 
 ### 4.2 Team = Grove Collaborators
 
 The `team` visibility level maps to "users who are members of groups associated with this grove." This leverages the existing group infrastructure (explicit groups, dynamic grove groups) without introducing a new concept. In multi-grove deployments, different groves can have different team compositions.
+
+<!-- feedback; see feedback above on the rename to grove-team - this clarifies that while there may be real world "teams" working across multiple groves, this can not address that.  That use-case will be addressed in teh future with more fine grained policy management, where you can assign a "group" (aka team) access to multple resourcss  -->
 
 ### 4.3 Read-Only Implicit Grants
 
