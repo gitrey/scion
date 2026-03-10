@@ -23,6 +23,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/GoogleCloudPlatform/scion/pkg/util/logging"
+
 	gcplog "cloud.google.com/go/logging"
 	logv2 "cloud.google.com/go/logging/apiv2"
 	loggingpb "cloud.google.com/go/logging/apiv2/loggingpb"
@@ -161,6 +163,10 @@ func BuildLogFilter(opts LogQueryOptions, projectID ...string) string {
 
 	if opts.LogID != "" && len(projectID) > 0 && projectID[0] != "" {
 		parts = append(parts, fmt.Sprintf(`logName = "projects/%s/logs/%s"`, projectID[0], opts.LogID))
+	} else if len(projectID) > 0 && projectID[0] != "" {
+		// Exclude request logs from general log queries — they are high-volume
+		// server infrastructure logs that are not relevant to agent activity.
+		parts = append(parts, fmt.Sprintf(`logName != "projects/%s/logs/%s"`, projectID[0], logging.RequestLogID))
 	}
 	if opts.AgentID != "" && opts.AgentSlug != "" {
 		// Match messages where the agent is the recipient (agent_id label) OR

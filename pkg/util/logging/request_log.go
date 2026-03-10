@@ -34,6 +34,9 @@ import (
 // Environment variable for request log file path.
 const EnvRequestLogPath = "SCION_SERVER_REQUEST_LOG_PATH"
 
+// RequestLogID is the Cloud Logging log ID used for HTTP request logs.
+const RequestLogID = "scion_request_log"
+
 // HttpRequest mirrors google.logging.type.HttpRequest for structured JSON output.
 type HttpRequest struct {
 	RequestMethod string `json:"requestMethod"`
@@ -183,7 +186,7 @@ func NewRequestLogger(cfg RequestLoggerConfig) (*slog.Logger, func(), error) {
 
 	// Cloud handler
 	if cfg.CloudClient != nil {
-		ch := NewCloudHandlerFromClient(cfg.CloudClient, "scion_request_log", cfg.Component, cfg.Level)
+		ch := NewCloudHandlerFromClient(cfg.CloudClient, RequestLogID, cfg.Component, cfg.Level)
 		handlers = append(handlers, ch)
 		cleanups = append(cleanups, func() {
 			ch.logger.Flush()

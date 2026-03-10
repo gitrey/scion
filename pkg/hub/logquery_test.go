@@ -126,12 +126,12 @@ func TestBuildLogFilter_LogID(t *testing.T) {
 			expected:  `labels.agent_id = "agent-123"`,
 		},
 		{
-			name: "no logID with project ID",
+			name: "no logID with project ID excludes request log",
 			opts: LogQueryOptions{
 				AgentID: "agent-123",
 			},
 			projectID: "my-project",
-			expected:  `labels.agent_id = "agent-123"`,
+			expected:  `logName != "projects/my-project/logs/scion_request_log" AND labels.agent_id = "agent-123"`,
 		},
 		{
 			name: "agent slug builds OR filter for sent and received",
