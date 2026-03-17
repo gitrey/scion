@@ -380,6 +380,7 @@ export class ScionPageAdminGroupDetail extends LitElement {
 
       <scion-group-member-editor
         groupId=${this.group.id}
+        ?readOnly=${this.group.groupType === 'grove_agents'}
       ></scion-group-member-editor>
     `;
   }

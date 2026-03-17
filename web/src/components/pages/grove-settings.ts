@@ -362,9 +362,8 @@ export class ScionPageGroveSettings extends LitElement {
         this.groveId = match[1];
       }
     }
-    void this.loadGrove();
+    void this.loadGrove().then(() => this.loadMembersGroup());
     void this.loadTemplates();
-    void this.loadMembersGroup();
   }
 
   override disconnectedCallback(): void {
@@ -413,18 +412,29 @@ export class ScionPageGroveSettings extends LitElement {
   }
 
   private async loadMembersGroup(): Promise<void> {
+    if (!this.grove) {
+      console.warn('[grove-settings] loadMembersGroup: grove not loaded yet, skipping');
+      return;
+    }
+    const groveUUID = this.grove.id;
     try {
-      const response = await apiFetch(
-        `/api/v1/groups?groveId=${encodeURIComponent(this.groveId)}&groupType=explicit&limit=10`
-      );
+      const url = `/api/v1/groups?groveId=${encodeURIComponent(groveUUID)}&groupType=explicit&limit=10`;
+      console.debug('[grove-settings] loadMembersGroup:', url);
+      const response = await apiFetch(url);
       if (response.ok) {
         const data = (await response.json()) as { groups?: AdminGroup[] } | AdminGroup[];
         const groups = Array.isArray(data) ? data : data.groups || [];
+        console.debug('[grove-settings] groups for grove:', groups.length, groups.map((g) => g.slug));
         // Find the members group (slug pattern: grove:<slug>:members)
         this.membersGroup = groups.find((g) => g.slug?.endsWith(':members')) || null;
+        if (!this.membersGroup) {
+          console.warn('[grove-settings] no :members group found for grove', groveUUID);
+        }
+      } else {
+        console.warn('[grove-settings] loadMembersGroup response not ok:', response.status);
       }
     } catch (err) {
-      console.error('Failed to load grove members group:', err);
+      console.error('[grove-settings] Failed to load grove members group:', err);
     }
   }
 
