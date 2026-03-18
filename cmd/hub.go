@@ -1898,6 +1898,11 @@ func runHubLink(cmd *cobra.Command, args []string) error {
 	}
 
 	if hubGrove != nil && hubGrove.Name == groveName {
+		// Already linked — still call register so the server can backfill
+		// the membership group if it was created before group support.
+		if _, err := registerGroveOnHub(ctx, client, hubLookupID, groveName, resolvedPath, isGlobal); err != nil {
+			util.Debugf("Failed to register during re-link (non-fatal): %v", err)
+		}
 		fmt.Printf("Grove '%s' is already linked to the Hub (ID: %s)\n", groveName, groveID)
 	} else {
 		if hubGrove != nil && localHubGroveID != "" {
