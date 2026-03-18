@@ -250,6 +250,13 @@ When working in a containerized or sandboxed agent environment (e.g., scion agen
 - **Use `--dev-auth` for local testing.** When a Go server is available, `--dev-auth` bypasses OAuth and auto-creates a dev session, which is the simplest way to test the frontend end-to-end. See the README for details.
 - **Go server** the golang server can be started as a background process, but OAuth flows cannot be used in a container.
 
+### Tool pitfalls in sandboxed environments
+
+- **No `test` script.** There is no `npm test` script. Do not run `npm test` — it will fail. Use the specific verification commands listed in [Common Commands](#common-commands) (`npm run typecheck`, `npm run lint`, `npm run build`).
+- **Never use `npx tsc`.** There is a completely unrelated npm package called `tsc` (v2.x) that `npx` will download and run instead of TypeScript's compiler. Always use `npm run typecheck` which invokes the correct local TypeScript binary via the project's package.json script.
+- **TypeScript may not be installed globally.** Do not assume `tsc` or `./node_modules/.bin/tsc` are available. The project's `npm run typecheck` script is the only reliable way to type-check.
+- **For CSS-only changes**, if `npm run typecheck` is unavailable, `npm run build` is the next best verification — Vite will surface any import or syntax errors during bundling.
+
 ## Tips for End-to-End Web Validation
 
 These tips were collected during validation work and are useful for agents debugging or testing the web frontend against the Go backend.
