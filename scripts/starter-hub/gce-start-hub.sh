@@ -235,7 +235,7 @@ if $FULL_DEPLOY; then
     FULL_REMOTE_COMMANDS='
     # Ensure all build/runtime dependencies are present (cloud-init may have failed or not finished)
     NEED_APT_UPDATE=false
-    for cmd in make curl git node; do
+    for cmd in make curl git node certbot; do
         if ! command -v "$cmd" &>/dev/null; then
             NEED_APT_UPDATE=true
             break
@@ -259,6 +259,10 @@ if $FULL_DEPLOY; then
         sudo tar -C /usr/local -xzf /tmp/go.tar.gz
         sudo ln -sf /usr/local/go/bin/go /usr/bin/go
         sudo ln -sf /usr/local/go/bin/gofmt /usr/bin/gofmt
+    fi
+    if ! command -v certbot &>/dev/null; then
+        echo "  -> Installing certbot..."
+        sudo apt-get install -y certbot python3-certbot-dns-google
     fi
     if ! command -v docker &>/dev/null; then
         echo "  -> Installing Docker..."
@@ -311,12 +315,17 @@ if $FULL_DEPLOY; then
         echo "  -> Systemd unit file unchanged"
     fi
 
-    # Fix certificate permissions for Caddy
-    echo "  -> Fixing certificate permissions..."
-    sudo chown -R root:caddy /etc/letsencrypt/live
-    sudo chown -R root:caddy /etc/letsencrypt/archive
-    sudo chmod -R g+rX /etc/letsencrypt/live
-    sudo chmod -R g+rX /etc/letsencrypt/archive
+    # Fix certificate permissions for Caddy (only if certs exist)
+    if [ -d /etc/letsencrypt/live ]; then
+        echo "  -> Fixing certificate permissions..."
+        sudo chown -R root:caddy /etc/letsencrypt/live
+        sudo chown -R root:caddy /etc/letsencrypt/archive
+        sudo chmod -R g+rX /etc/letsencrypt/live
+        sudo chmod -R g+rX /etc/letsencrypt/archive
+    else
+        echo "  -> No certificates found at /etc/letsencrypt/live, skipping permission fix"
+        echo "     Run gce-certs.sh first to obtain certificates"
+    fi
 
     # Update Caddyfile if changed
     if ! diff -q /tmp/Caddyfile /etc/caddy/Caddyfile >/dev/null 2>&1; then

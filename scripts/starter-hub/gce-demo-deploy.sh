@@ -37,9 +37,14 @@ echo ""
 echo "--- Step 3: Setting up Repository ---"
 ./scripts/starter-hub/gce-demo-setup-repo.sh
 
-# Step 4: Build and Start Hub
+# Step 4: DNS and Certificates
 echo ""
-echo "--- Step 4: Building and Starting Hub ---"
+echo "--- Step 4: DNS and Certificates ---"
+./scripts/starter-hub/gce-certs.sh
+
+# Step 5: Build and Start Hub
+echo ""
+echo "--- Step 5: Building and Starting Hub ---"
 ./scripts/starter-hub/gce-start-hub.sh --full
 
 echo ""
