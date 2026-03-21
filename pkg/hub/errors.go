@@ -241,8 +241,7 @@ func MissingEnvVars(w http.ResponseWriter, keys []string, envInfo *EnvGatherResp
 		details["envGather"] = envInfo
 	}
 	writeError(w, http.StatusUnprocessableEntity, ErrCodeMissingEnvVars,
-		fmt.Sprintf("Cannot start agent: %d required environment variable(s) are missing: %s. "+
-			"Set them via 'scion hub secret set' or 'scion hub env set' before creating the agent.",
+		fmt.Sprintf("Cannot start agent: %d required environment variable(s) are missing: %s",
 			len(keys), strings.Join(keys, ", ")),
 		details)
 }

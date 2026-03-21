@@ -20,7 +20,7 @@
  * Form for creating and starting a new agent
  */
 
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, css, nothing } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 
 import type {
@@ -30,7 +30,7 @@ import type {
   Template,
   GCPServiceAccount,
 } from '../../shared/types.js';
-import { apiFetch, extractApiError } from '../../client/api.js';
+import { apiFetch, extractApiError, parseApiError } from '../../client/api.js';
 import '../shared/status-badge.js';
 
 @customElement('scion-page-agent-create')
@@ -55,6 +55,9 @@ export class ScionPageAgentCreate extends LitElement {
 
   @state()
   private error: string | null = null;
+
+  @state()
+  private errorLinks: Array<{ label: string; href: string }> = [];
 
   /** Form field values */
   @state()
@@ -291,6 +294,11 @@ export class ScionPageAgentCreate extends LitElement {
       margin-top: 0.125rem;
     }
 
+    .error-links a {
+      color: inherit;
+      font-weight: 600;
+    }
+
     .loading-state {
       display: flex;
       flex-direction: column;
@@ -422,6 +430,7 @@ export class ScionPageAgentCreate extends LitElement {
 
     this.submitting = true;
     this.error = null;
+    this.errorLinks = [];
 
     try {
       // If returning from configure, delete the old agent first
@@ -491,7 +500,14 @@ export class ScionPageAgentCreate extends LitElement {
       });
 
       if (!response.ok) {
-        throw new Error(await extractApiError(response, `HTTP ${response.status}`));
+        const apiErr = await parseApiError(response, `HTTP ${response.status}`);
+        if (apiErr.code === 'missing_env_vars') {
+          this.errorLinks = [
+            ...(this.groveId ? [{ label: 'Grove Settings', href: `/groves/${this.groveId}/settings` }] : []),
+            { label: 'Profile Secrets', href: '/profile/secrets' },
+          ];
+        }
+        throw new Error(apiErr.message);
       }
 
       const result = (await response.json()) as {
@@ -541,6 +557,7 @@ export class ScionPageAgentCreate extends LitElement {
 
     this.submittingEdit = true;
     this.error = null;
+    this.errorLinks = [];
 
     try {
       // If returning from configure, delete the old agent first
@@ -603,7 +620,14 @@ export class ScionPageAgentCreate extends LitElement {
       });
 
       if (!response.ok) {
-        throw new Error(await extractApiError(response, `HTTP ${response.status}`));
+        const apiErr = await parseApiError(response, `HTTP ${response.status}`);
+        if (apiErr.code === 'missing_env_vars') {
+          this.errorLinks = [
+            ...(this.groveId ? [{ label: 'Grove Settings', href: `/groves/${this.groveId}/settings` }] : []),
+            { label: 'Profile Secrets', href: '/profile/secrets' },
+          ];
+        }
+        throw new Error(apiErr.message);
       }
 
       const result = (await response.json()) as {
@@ -872,6 +896,14 @@ export class ScionPageAgentCreate extends LitElement {
               <div class="error-banner">
                 <sl-icon name="exclamation-triangle"></sl-icon>
                 <span>${this.error}</span>
+                ${this.errorLinks.length > 0
+                  ? html`<span class="error-links"
+                      >&nbsp;&mdash;
+                      ${this.errorLinks.map(
+                        (link, i) => html`${i > 0 ? html` or ` : nothing}<a href=${link.href}>${link.label}</a>`
+                      )}</span
+                    >`
+                  : nothing}
               </div>
             `
           : ''}

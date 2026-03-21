@@ -95,3 +95,37 @@ export async function extractApiError(res: Response, fallback: string): Promise<
   }
   return fallback;
 }
+
+/** Structured API error info returned by {@link parseApiError}. */
+export interface ApiErrorInfo {
+  code: string;
+  message: string;
+  details?: Record<string, unknown>;
+}
+
+/**
+ * Parse a failed API response into structured error info (code, message, details).
+ *
+ * Use this instead of {@link extractApiError} when the caller needs to inspect
+ * the error code to provide context-aware guidance.
+ */
+export async function parseApiError(res: Response, fallback: string): Promise<ApiErrorInfo> {
+  try {
+    const data = (await res.json()) as {
+      error?: { code?: string; message?: string; details?: Record<string, unknown> } | string;
+      message?: string;
+    };
+    if (typeof data.error === 'object' && data.error) {
+      return {
+        code: data.error.code ?? '',
+        message: data.error.message ?? fallback,
+        details: data.error.details,
+      };
+    }
+    if (typeof data.message === 'string') return { code: '', message: data.message };
+    if (typeof data.error === 'string') return { code: '', message: data.error };
+  } catch {
+    // Response wasn't JSON
+  }
+  return { code: '', message: fallback };
+}
