@@ -1381,12 +1381,11 @@ export class ScionPageGroveDetail extends LitElement {
           </div>
           ${!showTabs
             ? html`<div style="display: flex; gap: 0.5rem; align-items: center;">
+                ${this.renderProviderWarning(tabData)}
                 ${this.renderFileActions()}
               </div>`
             : nothing}
         </div>
-
-        ${this.renderProviderWarning(tabData)}
 
         ${showTabs
           ? html`
@@ -1408,6 +1407,7 @@ export class ScionPageGroveDetail extends LitElement {
                   )}
                 </sl-tab-group>
                 <div class="files-tab-actions">
+                  ${this.renderProviderWarning(tabData)}
                   ${this.renderFileActions()}
                 </div>
               </div>
