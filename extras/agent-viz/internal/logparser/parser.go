@@ -598,9 +598,9 @@ func extractEvents(entries []GCPLogEntry, agents []AgentInfo) []PlaybackEvent {
 			}
 
 		case "scion-messages":
-			// Skip "accepted" duplicates — only process dispatched messages
+			// Skip rejected messages (failed deliveries)
 			msgAction := getStr(jp, "message")
-			if strings.Contains(msgAction, "accepted") {
+			if strings.Contains(msgAction, "rejected") {
 				continue
 			}
 
@@ -693,6 +693,52 @@ func extractEvents(entries []GCPLogEntry, agents []AgentInfo) []PlaybackEvent {
 			agentName: agentSlug,
 			timestamp: e.Timestamp,
 		})
+	}
+
+	// Post-processing: enrich agent_create events with requestedBy
+	// For each agent_create, look backward for the nearest Bash tool-start from another agent within 15s.
+	for i, evt := range events {
+		if evt.Type != "agent_create" {
+			continue
+		}
+		lifecycle, ok := evt.Data.(AgentLifecycleEvent)
+		if !ok || lifecycle.RequestedBy != "" {
+			continue
+		}
+		createTime, err := TimestampToTime(evt.Timestamp)
+		if err != nil {
+			continue
+		}
+
+		for j := i - 1; j >= 0; j-- {
+			prev := events[j]
+			if prev.Type != "agent_state" {
+				continue
+			}
+			stateEvt, ok := prev.Data.(AgentStateEvent)
+			if !ok || stateEvt.Activity != "executing" || stateEvt.ToolName != "Bash" {
+				continue
+			}
+			evtTime, err := TimestampToTime(prev.Timestamp)
+			if err != nil {
+				continue
+			}
+			delta := createTime.Sub(evtTime)
+			if delta < 0 || delta > 15*time.Second {
+				continue
+			}
+			// Must be a different agent
+			if stateEvt.AgentID == lifecycle.AgentID {
+				continue
+			}
+			if name, ok := agentNameByID[stateEvt.AgentID]; ok {
+				lifecycle.RequestedBy = name
+			} else {
+				lifecycle.RequestedBy = stateEvt.AgentID
+			}
+			events[i].Data = lifecycle
+			break
+		}
 	}
 
 	// Post-processing: enrich agent_destroy events with requestedBy info

@@ -121,21 +121,21 @@ export class FileEditRenderer {
         const y = from.y + (to.y - from.y) * eased;
 
         if (particle.action === 'read') {
-          // Read: smaller, dimmer, dotted trail
-          const trailLength = 3;
+          // Read: moderate trail, visible but less dramatic than create
+          const trailLength = 4;
           for (let i = 0; i < trailLength; i++) {
-            const tt = Math.max(0, eased - i * 0.05);
+            const tt = Math.max(0, eased - i * 0.04);
             const tx = from.x + (to.x - from.x) * tt;
             const ty = from.y + (to.y - from.y) * tt;
             ctx.beginPath();
-            ctx.arc(tx, ty, 1.5, 0, Math.PI * 2);
-            ctx.fillStyle = this.getColor(particle, 0.5 - i * 0.12);
+            ctx.arc(tx, ty, 2.5 - i * 0.4, 0, Math.PI * 2);
+            ctx.fillStyle = this.getColor(particle, 0.6 - i * 0.12);
             ctx.fill();
           }
           ctx.beginPath();
-          ctx.arc(x, y, 2.5, 0, Math.PI * 2);
-          ctx.fillStyle = this.getColor(particle, 0.7);
-          ctx.shadowBlur = 6;
+          ctx.arc(x, y, 3.5, 0, Math.PI * 2);
+          ctx.fillStyle = this.getColor(particle, 0.85);
+          ctx.shadowBlur = 10;
           ctx.shadowColor = particle.color;
           ctx.fill();
           ctx.shadowBlur = 0;

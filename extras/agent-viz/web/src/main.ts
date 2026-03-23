@@ -4,6 +4,7 @@ import { AgentRing } from './agents';
 import { MessageRenderer } from './messages';
 import { FileEditRenderer } from './files';
 import { DestroyBeamRenderer } from './destroy-beam';
+import { CreateBeamRenderer } from './create-beam';
 import { PlaybackControls } from './playback';
 import type {
   PlaybackManifest,
@@ -22,6 +23,7 @@ let agentRing: AgentRing;
 let messageRenderer: MessageRenderer;
 let fileEditRenderer: FileEditRenderer;
 let destroyBeamRenderer: DestroyBeamRenderer;
+let createBeamRenderer: CreateBeamRenderer;
 let playbackControls: PlaybackControls;
 let overlayCanvas: HTMLCanvasElement;
 let overlayCtx: CanvasRenderingContext2D;
@@ -48,8 +50,14 @@ function init(): void {
   messageRenderer = new MessageRenderer();
   fileEditRenderer = new FileEditRenderer();
   destroyBeamRenderer = new DestroyBeamRenderer();
+  createBeamRenderer = new CreateBeamRenderer();
+
+  // Wire up cross-references
   fileEditRenderer.setFileGraph(fileGraph);
   fileEditRenderer.setAgentRing(agentRing);
+  messageRenderer.setAgentRing(agentRing);
+  destroyBeamRenderer.setAgentRing(agentRing);
+  createBeamRenderer.setAgentRing(agentRing);
 
   // WebSocket
   const ws = new WSClient();
@@ -149,6 +157,7 @@ function resetState(): void {
   messageRenderer.reset();
   fileEditRenderer.reset();
   destroyBeamRenderer.reset();
+  createBeamRenderer.reset();
 
   // Re-init empty state
   const w = overlayCanvas.width;
@@ -175,19 +184,8 @@ function handleEventInstant(evt: PlaybackEvent): void {
     }
     case 'agent_create': {
       const lifecycle = evt.data as AgentLifecycleEvent;
-      const agentInManifest = manifest?.agents.find(
-        (a) => a.id === lifecycle.agentId || a.name === lifecycle.name
-      );
-      if (agentInManifest) {
-        agentRing.addAgent(agentInManifest);
-      } else {
-        agentRing.addAgent({
-          id: lifecycle.agentId,
-          name: lifecycle.name || lifecycle.agentId.substring(0, 8),
-          harness: 'unknown',
-          color: '#888',
-        });
-      }
+      const agentInfo = resolveAgentInfo(lifecycle);
+      agentRing.addAgent(agentInfo);
       agentRing.updateState({
         agentId: lifecycle.agentId,
         phase: 'created',
@@ -230,24 +228,27 @@ function handleEvent(evt: PlaybackEvent): void {
     }
     case 'agent_create': {
       const lifecycle = evt.data as AgentLifecycleEvent;
-      const agentInManifest = manifest?.agents.find(
-        (a) => a.id === lifecycle.agentId || a.name === lifecycle.name
-      );
-      if (agentInManifest) {
-        agentRing.addAgent(agentInManifest);
+      const agentInfo = resolveAgentInfo(lifecycle);
+
+      if (lifecycle.requestedBy) {
+        // Fire a create beam — the beam renderer will add the agent when it arrives
+        createBeamRenderer.addBeam(lifecycle.requestedBy, agentInfo, agentRing);
+        // Set initial state after a delay matching beam travel
+        setTimeout(() => {
+          agentRing.updateState({
+            agentId: lifecycle.agentId,
+            phase: 'created',
+            activity: 'idle',
+          });
+        }, 900); // BEAM_CHARGE + BEAM_TRAVEL duration
       } else {
-        agentRing.addAgent({
-          id: lifecycle.agentId,
-          name: lifecycle.name || lifecycle.agentId.substring(0, 8),
-          harness: 'unknown',
-          color: '#888',
+        agentRing.addAgent(agentInfo);
+        agentRing.updateState({
+          agentId: lifecycle.agentId,
+          phase: 'created',
+          activity: 'idle',
         });
       }
-      agentRing.updateState({
-        agentId: lifecycle.agentId,
-        phase: 'created',
-        activity: 'idle',
-      });
       break;
     }
     case 'agent_destroy': {
@@ -267,7 +268,7 @@ function handleEvent(evt: PlaybackEvent): void {
         phase: 'stopped',
         activity: 'completed',
       });
-      // Delay the actual removal slightly so the beam animation has time to show
+      // Delay the actual removal so the beam animation has time to show
       if (lifecycle.requestedBy) {
         setTimeout(() => {
           agentRing.removeAgent(lifecycle.agentId);
@@ -278,6 +279,19 @@ function handleEvent(evt: PlaybackEvent): void {
       break;
     }
   }
+}
+
+/** Resolve agent info from lifecycle event, checking manifest for color/harness. */
+function resolveAgentInfo(lifecycle: AgentLifecycleEvent) {
+  const fromManifest = manifest?.agents.find(
+    (a) => a.id === lifecycle.agentId || a.name === lifecycle.name
+  );
+  return fromManifest ?? {
+    id: lifecycle.agentId,
+    name: lifecycle.name || lifecycle.agentId.substring(0, 8),
+    harness: 'unknown',
+    color: '#888',
+  };
 }
 
 function handleResize(): void {
@@ -304,7 +318,8 @@ function animate(): void {
   // Draw file edit particles
   fileEditRenderer.draw(overlayCtx);
 
-  // Draw destroy beams
+  // Draw beams
+  createBeamRenderer.draw(overlayCtx);
   destroyBeamRenderer.draw(overlayCtx);
 
   animFrameId = requestAnimationFrame(animate);

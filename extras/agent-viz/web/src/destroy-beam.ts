@@ -6,14 +6,22 @@ const BEAM_LINGER_DURATION = 600; // ms for beam to linger and fade
 const TOTAL_BEAM_DURATION = BEAM_CHARGE_DURATION + BEAM_TRAVEL_DURATION + BEAM_LINGER_DURATION;
 
 interface ActiveBeam {
-  from: { x: number; y: number };
-  to: { x: number; y: number };
+  fromAgent: string;
+  toAgent: string;
   startTime: number;
   fromColor: string;
+  // Captured positions at beam start (frozen)
+  frozenFrom: { x: number; y: number };
+  frozenTo: { x: number; y: number };
 }
 
 export class DestroyBeamRenderer {
   private beams: ActiveBeam[] = [];
+  private agentRing: AgentRing | null = null;
+
+  setAgentRing(ring: AgentRing): void {
+    this.agentRing = ring;
+  }
 
   addBeam(
     requestedByName: string,
@@ -24,11 +32,16 @@ export class DestroyBeamRenderer {
     const toPos = agentRing.getAgentPosition(targetName);
     if (!fromPos || !toPos) return;
 
+    // Freeze ring so target doesn't move during beam travel
+    agentRing.freezeRebalance();
+
     this.beams.push({
-      from: { ...fromPos },
-      to: { ...toPos },
+      fromAgent: requestedByName,
+      toAgent: targetName,
       startTime: Date.now(),
       fromColor: agentRing.getAgentColor(requestedByName),
+      frozenFrom: { ...fromPos },
+      frozenTo: { ...toPos },
     });
   }
 
@@ -39,13 +52,18 @@ export class DestroyBeamRenderer {
   draw(ctx: CanvasRenderingContext2D): void {
     const now = Date.now();
 
-    this.beams = this.beams.filter(
-      (b) => now - b.startTime < TOTAL_BEAM_DURATION
-    );
+    this.beams = this.beams.filter((b) => {
+      const expired = now - b.startTime >= TOTAL_BEAM_DURATION;
+      if (expired && this.agentRing) {
+        // Unfreeze ring when beam completes
+        this.agentRing.unfreezeRebalance();
+      }
+      return !expired;
+    });
 
     for (const beam of this.beams) {
       const elapsed = now - beam.startTime;
-      const { from, to } = beam;
+      const { frozenFrom: from, frozenTo: to } = beam;
 
       if (elapsed < BEAM_CHARGE_DURATION) {
         // Charge-up phase: pulsing glow at source

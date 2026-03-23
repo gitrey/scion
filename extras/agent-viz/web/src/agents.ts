@@ -23,6 +23,7 @@ export class AgentRing {
   private centerX = 0;
   private centerY = 0;
   private animationPhase = 0;
+  private frozen = false;
 
   init(agentInfos: AgentInfo[], centerX: number, centerY: number): void {
     this.centerX = centerX;
@@ -114,6 +115,7 @@ export class AgentRing {
   }
 
   private redistributeAgents(): void {
+    if (this.frozen) return;
     const liveAgents = this.getLiveAgents();
     const n = liveAgents.length;
     if (n === 0) return;
@@ -125,6 +127,36 @@ export class AgentRing {
       agent.targetAngle = newAngle;
       agent.rebalanceStart = now;
     });
+  }
+
+  /** Freeze agent positions — prevents rebalance animations during beam travel. */
+  freezeRebalance(): void {
+    this.frozen = true;
+    // Stop any in-progress rebalance by snapping to current positions
+    for (const agent of this.agents.values()) {
+      if (agent.rebalanceStart > 0 && !agent.removing) {
+        agent.prevAngle = agent.angle;
+        agent.targetAngle = agent.angle;
+        agent.rebalanceStart = 0;
+      }
+    }
+  }
+
+  /** Unfreeze and trigger a rebalance. */
+  unfreezeRebalance(): void {
+    this.frozen = false;
+    this.redistributeAgents();
+  }
+
+  /** Calculate where the next agent would be placed on the ring without adding it. */
+  getNextSlotPosition(): { x: number; y: number } {
+    const live = this.getLiveAgents();
+    const n = live.length + 1;
+    const angle = (2 * Math.PI * (n - 1)) / n - Math.PI / 2;
+    return {
+      x: this.centerX + Math.cos(angle) * this.ringRadius,
+      y: this.centerY + Math.sin(angle) * this.ringRadius,
+    };
   }
 
   updateState(event: AgentStateEvent): void {
