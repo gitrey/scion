@@ -61,6 +61,10 @@ func (g *GeminiCLI) AdvancedCapabilities() api.HarnessAdvancedCapabilities {
 func (g *GeminiCLI) GetEnv(agentName string, agentHome string, unixUsername string) map[string]string {
 	env := make(map[string]string)
 
+	// Prevent Gemini CLI from re-launching itself, which drops env vars
+	// passed via docker run -e (SCION_AUTH_TOKEN, SCION_AGENT_NAME, etc.)
+	env["GEMINI_CLI_NO_RELAUNCH"] = "true"
+
 	if relPath := g.getSystemPromptRelPath(agentHome); relPath != "" {
 		fullPath := fmt.Sprintf("%s/%s", util.GetHomeDir(unixUsername), relPath)
 		env["GEMINI_SYSTEM_MD"] = fullPath
