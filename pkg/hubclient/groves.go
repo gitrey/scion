@@ -115,8 +115,16 @@ type RegisterGroveResponse struct {
 	Grove       *Grove         `json:"grove"`
 	Broker      *RuntimeBroker `json:"broker,omitempty"`      // Populated if brokerId or broker provided
 	Created     bool           `json:"created"`               // True if grove was newly created
+	Matches     []GroveMatch   `json:"matches,omitempty"`     // Populated when multiple groves share the same git remote
 	BrokerToken string         `json:"brokerToken,omitempty"` // DEPRECATED: use two-phase registration
 	SecretKey   string         `json:"secretKey,omitempty"`   // DEPRECATED: secrets only from /brokers/join
+}
+
+// GroveMatch holds summary information about a grove for disambiguation.
+type GroveMatch struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Slug string `json:"slug"`
 }
 
 // CreateGroveRequest is the request for creating a grove without a broker.

@@ -365,8 +365,9 @@ func EnsureHubReady(grovePath string, opts EnsureHubReadyOptions) (*HubContext, 
 
 				if !idMatched {
 					// No ID match - ask user what to do
-					hasGitRemote := !isGlobal && util.GetGitRemote() != ""
-					choice, selectedID := ShowMatchingGrovesPrompt(groveName, matches, hasGitRemote, opts.AutoConfirm)
+					baseSlug := api.Slugify(groveName)
+					nextSlug := NextSlugFromMatches(baseSlug, matches)
+					choice, selectedID := ShowMatchingGrovesPrompt(groveName, matches, nextSlug, opts.AutoConfirm)
 					switch choice {
 					case GroveChoiceCancel:
 						return nil, fmt.Errorf("registration cancelled")
@@ -1196,6 +1197,7 @@ func findMatchingGroves(ctx context.Context, hubCtx *HubContext, groveName strin
 		matches = append(matches, GroveMatch{
 			ID:        g.ID,
 			Name:      g.Name,
+			Slug:      g.Slug,
 			GitRemote: g.GitRemote,
 		})
 	}

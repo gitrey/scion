@@ -150,14 +150,16 @@ const (
 type GroveMatch struct {
 	ID        string
 	Name      string
+	Slug      string
 	GitRemote string
 }
 
 // ShowMatchingGrovesPrompt displays matching groves and asks the user to choose.
-// When hasGitRemote is true, the "Register as new grove" option is hidden
-// because the git URI enforces a single grove per remote.
+// The "Register as new grove" option is always shown, allowing multiple groves
+// per git remote. When nextSlug is non-empty, it is displayed as the proposed
+// slug for a new grove.
 // Returns the choice and the selected grove ID if linking.
-func ShowMatchingGrovesPrompt(groveName string, matches []GroveMatch, hasGitRemote bool, autoConfirm bool) (GroveChoice, string) {
+func ShowMatchingGrovesPrompt(groveName string, matches []GroveMatch, nextSlug string, autoConfirm bool) (GroveChoice, string) {
 	fmt.Println()
 	fmt.Printf("Found %d existing grove(s) with the name '%s' on the Hub:\n", len(matches), groveName)
 	fmt.Println()
@@ -169,8 +171,10 @@ func ShowMatchingGrovesPrompt(groveName string, matches []GroveMatch, hasGitRemo
 			fmt.Printf("  [%d] %s (ID: %s)\n", i+1, m.Name, m.ID)
 		}
 	}
-	if !hasGitRemote {
-		fmt.Printf("  [%d] Register as a new grove (duplicate name)\n", len(matches)+1)
+	if nextSlug != "" {
+		fmt.Printf("  [%d] Register as a new grove (will be created as '%s')\n", len(matches)+1, nextSlug)
+	} else {
+		fmt.Printf("  [%d] Register as a new grove\n", len(matches)+1)
 	}
 	fmt.Println()
 
@@ -180,10 +184,7 @@ func ShowMatchingGrovesPrompt(groveName string, matches []GroveMatch, hasGitRemo
 		return GroveChoiceLink, matches[0].ID
 	}
 
-	maxChoice := len(matches)
-	if !hasGitRemote {
-		maxChoice = len(matches) + 1
-	}
+	maxChoice := len(matches) + 1
 
 	reader := bufio.NewReader(os.Stdin)
 	for {
@@ -209,12 +210,40 @@ func ShowMatchingGrovesPrompt(groveName string, matches []GroveMatch, hasGitRemo
 			continue
 		}
 
-		if !hasGitRemote && choice == len(matches)+1 {
+		if choice == len(matches)+1 {
 			return GroveChoiceRegisterNew, ""
 		}
 
 		return GroveChoiceLink, matches[choice-1].ID
 	}
+}
+
+// NextSlugFromMatches computes a proposed next serial slug from a list of
+// existing grove matches. This is a client-side estimate for display purposes;
+// the server computes the authoritative slug at creation time.
+func NextSlugFromMatches(baseSlug string, matches []GroveMatch) string {
+	maxSerial := 0
+	for _, m := range matches {
+		if m.Slug == baseSlug {
+			if maxSerial < 1 {
+				maxSerial = 1
+			}
+			continue
+		}
+		// Check for serial-numbered slugs like "base-slug-2"
+		prefix := baseSlug + "-"
+		if strings.HasPrefix(m.Slug, prefix) {
+			suffix := m.Slug[len(prefix):]
+			n := 0
+			if _, err := fmt.Sscanf(suffix, "%d", &n); err == nil && n >= maxSerial {
+				maxSerial = n + 1
+			}
+		}
+	}
+	if maxSerial == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%s-%d", baseSlug, maxSerial)
 }
 
 // ShowBrokerRegistrationPrompt displays the broker registration confirmation.

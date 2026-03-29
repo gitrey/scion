@@ -54,3 +54,85 @@ func TestConfirmAction_NoAutoConfirm_DefaultNo(t *testing.T) {
 		t.Error("ConfirmAction with defaultYes=false should return false on stdin EOF")
 	}
 }
+
+func TestNextSlugFromMatches(t *testing.T) {
+	tests := []struct {
+		name     string
+		baseSlug string
+		matches  []GroveMatch
+		want     string
+	}{
+		{
+			name:     "no matches",
+			baseSlug: "widgets",
+			matches:  nil,
+			want:     "",
+		},
+		{
+			name:     "one match with base slug",
+			baseSlug: "widgets",
+			matches: []GroveMatch{
+				{Slug: "widgets"},
+			},
+			want: "widgets-1",
+		},
+		{
+			name:     "two matches with serial",
+			baseSlug: "widgets",
+			matches: []GroveMatch{
+				{Slug: "widgets"},
+				{Slug: "widgets-1"},
+			},
+			want: "widgets-2",
+		},
+		{
+			name:     "gap in serial",
+			baseSlug: "widgets",
+			matches: []GroveMatch{
+				{Slug: "widgets"},
+				{Slug: "widgets-3"},
+			},
+			want: "widgets-4",
+		},
+		{
+			name:     "no base slug match but serial exists",
+			baseSlug: "widgets",
+			matches: []GroveMatch{
+				{Slug: "widgets-2"},
+			},
+			want: "widgets-3",
+		},
+		{
+			name:     "unrelated slugs only",
+			baseSlug: "widgets",
+			matches: []GroveMatch{
+				{Slug: "gadgets"},
+			},
+			want: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := NextSlugFromMatches(tt.baseSlug, tt.matches)
+			if got != tt.want {
+				t.Errorf("NextSlugFromMatches(%q, ...) = %q, want %q", tt.baseSlug, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestShowMatchingGrovesPrompt_AutoConfirm(t *testing.T) {
+	matches := []GroveMatch{
+		{ID: "id-1", Name: "widgets", Slug: "widgets"},
+		{ID: "id-2", Name: "widgets (2)", Slug: "widgets-2"},
+	}
+
+	choice, selectedID := ShowMatchingGrovesPrompt("widgets", matches, "widgets-3", true)
+	if choice != GroveChoiceLink {
+		t.Errorf("expected GroveChoiceLink, got %v", choice)
+	}
+	if selectedID != "id-1" {
+		t.Errorf("expected selected ID 'id-1', got %q", selectedID)
+	}
+}

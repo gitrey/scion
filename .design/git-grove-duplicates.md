@@ -400,18 +400,18 @@ If this change needs to be reverted, groves that were created as duplicates (sha
 5. ✅ **Retain `HashGroveID()` function:** Marked as not used for grove IDs but kept for other potential uses.
 6. ✅ **Tests:** Verify that creating two groves for the same URL produces different IDs and serial slugs.
 
-### Phase 3: Registration and Linking Flow
+### Phase 3: Registration and Linking Flow ✅ COMPLETED
 
 **Goal:** Support creating new groves for URLs that already have groves, with ID-based lookup as the universal pattern.
 
-1. **Update `handleGroveRegister()`:** Use `GetGrovesByGitRemote()` (plural). When git remote matches multiple groves, return the match list in the response. When exactly one match, preserve current auto-link behavior.
-2. **Update `RegisterGroveResponse`:** Add `Matches []GroveMatch` field.
-3. **Update `ShowMatchingGrovesPrompt()`:** Remove `hasGitRemote` parameter. Always show "Register as new grove" option. Show proposed serial-numbered slug and default display name with qualifier.
-4. **Update `runHubLink()`:** Handle multiple git remote matches by showing the disambiguation prompt.
-5. **Update `EnsureHubReady()`:** Prioritize `hub.groveId` and `grove_id` for ID-based lookup. Remove git-remote-based auto-linking. When no ID matches, trigger the disambiguation prompt (showing all matches by git remote or name). Persist `hub.groveId` after selection so subsequent syncs use the fast ID path.
-6. **Update `handleGroveSyncTemplates()`:** Replace `GetGroveByGitRemote` call with `GetInstallationForRepository()` for GitHub token sourcing.
-7. **Serial slug display:** Show the next available slug in the "Register as new" option.
-8. **Tests:** End-to-end linking flow with multiple groves per remote.
+1. ✅ **Update `handleGroveRegister()`:** Uses `GetGrovesByGitRemote()` (plural). When git remote matches multiple groves, returns the match list in the response. When exactly one match, preserves current auto-link behavior.
+2. ✅ **Update `RegisterGroveResponse`:** Added `Matches []GroveMatch` field (both server-side in `pkg/hub/handlers.go` and client-side in `pkg/hubclient/groves.go`).
+3. ✅ **Update `ShowMatchingGrovesPrompt()`:** Removed `hasGitRemote` parameter. Always shows "Register as new grove" option. Shows proposed serial-numbered slug via `nextSlug` parameter.
+4. ✅ **Update `runHubLink()`:** Uses `NextSlugFromMatches()` to compute proposed slug, passes it to the disambiguation prompt. Populates `Slug` field on `GroveMatch`.
+5. ✅ **Update `EnsureHubReady()`:** Prioritizes `hub.groveId` and `grove_id` for ID-based lookup. Removed `hasGitRemote` calculation. Uses `NextSlugFromMatches()` for the disambiguation prompt.
+6. ✅ **Update `handleGroveSyncTemplates()`:** Already uses `GetInstallationForRepository()` for GitHub token sourcing (completed in Phase 1).
+7. ✅ **Serial slug display:** `NextSlugFromMatches()` helper computes the next available slug client-side; shown in the "Register as new" option.
+8. ✅ **Tests:** Multi-match registration test (`TestGroveRegisterMultipleGitRemoteMatches`), `NextSlugFromMatches` unit tests, `ShowMatchingGrovesPrompt` auto-confirm test.
 
 ### Phase 4: CLI and Hub-First Creation
 

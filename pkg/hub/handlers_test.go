@@ -1002,6 +1002,72 @@ func TestGroveRegisterCaseInsensitive(t *testing.T) {
 	}
 }
 
+func TestGroveRegisterMultipleGitRemoteMatches(t *testing.T) {
+	srv, s := testServer(t)
+	ctx := context.Background()
+
+	// Pre-create two groves for the same git remote.
+	grove1 := &store.Grove{
+		ID:        "grove-1",
+		Name:      "widgets",
+		Slug:      "widgets",
+		GitRemote: "github.com/acme/widgets",
+	}
+	grove2 := &store.Grove{
+		ID:        "grove-2",
+		Name:      "widgets (2)",
+		Slug:      "widgets-2",
+		GitRemote: "github.com/acme/widgets",
+	}
+	if err := s.CreateGrove(ctx, grove1); err != nil {
+		t.Fatalf("failed to create grove1: %v", err)
+	}
+	if err := s.CreateGrove(ctx, grove2); err != nil {
+		t.Fatalf("failed to create grove2: %v", err)
+	}
+
+	// Register with the same git remote — should create a new grove
+	// and include matches for disambiguation.
+	body := map[string]interface{}{
+		"name":      "widgets",
+		"gitRemote": "https://github.com/acme/widgets.git",
+	}
+	rec := doRequest(t, srv, http.MethodPost, "/api/v1/groves/register", body)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp RegisterGroveResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	// A new grove should be created (not linked to either existing one).
+	if !resp.Created {
+		t.Error("expected created=true when multiple git remote matches exist")
+	}
+
+	// The response should include the two existing matches.
+	if len(resp.Matches) != 2 {
+		t.Fatalf("expected 2 matches, got %d", len(resp.Matches))
+	}
+
+	matchIDs := map[string]bool{}
+	for _, m := range resp.Matches {
+		matchIDs[m.ID] = true
+	}
+	if !matchIDs["grove-1"] || !matchIDs["grove-2"] {
+		t.Errorf("expected matches to include grove-1 and grove-2, got %v", resp.Matches)
+	}
+
+	// The newly created grove should have a serial slug.
+	// NextAvailableSlug fills gaps, so with "widgets" and "widgets-2" taken,
+	// the next available is "widgets-1".
+	if resp.Grove.Slug != "widgets-1" {
+		t.Errorf("expected serial slug 'widgets-1', got %q", resp.Grove.Slug)
+	}
+}
+
 func TestGroveRegisterBrokerDeduplication(t *testing.T) {
 	srv, _ := testServer(t)
 

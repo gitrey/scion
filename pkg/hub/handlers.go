@@ -31,6 +31,7 @@ import (
 	"github.com/GoogleCloudPlatform/scion/pkg/api"
 	"github.com/GoogleCloudPlatform/scion/pkg/config"
 	"github.com/GoogleCloudPlatform/scion/pkg/gcp"
+	"github.com/GoogleCloudPlatform/scion/pkg/hubclient"
 	"github.com/GoogleCloudPlatform/scion/pkg/messages"
 	"github.com/GoogleCloudPlatform/scion/pkg/secret"
 	"github.com/GoogleCloudPlatform/scion/pkg/storage"
@@ -2478,11 +2479,12 @@ type RegisterBrokerInfo struct {
 }
 
 type RegisterGroveResponse struct {
-	Grove       *store.Grove         `json:"grove"`
-	Broker      *store.RuntimeBroker `json:"broker,omitempty"`
-	Created     bool                 `json:"created"`
-	BrokerToken string               `json:"brokerToken,omitempty"` // DEPRECATED: use two-phase registration
-	SecretKey   string               `json:"secretKey,omitempty"`   // DEPRECATED: secrets only from /brokers/join
+	Grove       *store.Grove           `json:"grove"`
+	Broker      *store.RuntimeBroker   `json:"broker,omitempty"`
+	Created     bool                   `json:"created"`
+	Matches     []hubclient.GroveMatch `json:"matches,omitempty"`     // Populated when multiple groves share the same git remote
+	BrokerToken string                 `json:"brokerToken,omitempty"` // DEPRECATED: use two-phase registration
+	SecretKey   string                 `json:"secretKey,omitempty"`   // DEPRECATED: secrets only from /brokers/join
 }
 
 // AddProviderRequest is the request for adding a broker as a grove provider.
@@ -3186,6 +3188,7 @@ func (s *Server) handleGroveRegister(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// If not found by ID, try git remote lookup
+	var gitRemoteMatches []*store.Grove
 	if grove == nil && normalizedRemote != "" {
 		// For groves with git remote, look up by git remote (may return multiple)
 		matchingGroves, err := s.store.GetGrovesByGitRemote(ctx, normalizedRemote)
@@ -3196,9 +3199,10 @@ func (s *Server) handleGroveRegister(w http.ResponseWriter, r *http.Request) {
 		if len(matchingGroves) == 1 {
 			// Backward compatible: single match auto-links
 			grove = matchingGroves[0]
+		} else if len(matchingGroves) > 1 {
+			// Multiple matches — return the list for client-side disambiguation.
+			gitRemoteMatches = matchingGroves
 		}
-		// When multiple matches exist, grove remains nil and a new one is created.
-		// Phase 3 will add disambiguation support via the response matches field.
 	}
 
 	// If still not found and no git remote, try by slug (for global groves)
@@ -3446,10 +3450,25 @@ func (s *Server) handleGroveRegister(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Build match list for client-side disambiguation when multiple
+	// groves share the same git remote.
+	var matches []hubclient.GroveMatch
+	if len(gitRemoteMatches) > 0 {
+		matches = make([]hubclient.GroveMatch, len(gitRemoteMatches))
+		for i, g := range gitRemoteMatches {
+			matches[i] = hubclient.GroveMatch{
+				ID:   g.ID,
+				Name: g.Name,
+				Slug: g.Slug,
+			}
+		}
+	}
+
 	writeJSON(w, http.StatusOK, RegisterGroveResponse{
 		Grove:       grove,
 		Broker:      broker,
 		Created:     created,
+		Matches:     matches,
 		BrokerToken: brokerToken,
 		SecretKey:   secretKey,
 	})

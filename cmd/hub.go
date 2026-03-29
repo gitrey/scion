@@ -2105,12 +2105,14 @@ func runHubLink(cmd *cobra.Command, args []string) error {
 				matches[i] = hubsync.GroveMatch{
 					ID:        g.ID,
 					Name:      g.Name,
+					Slug:      g.Slug,
 					GitRemote: g.GitRemote,
 				}
 			}
 
-			hasGitRemote := !isGlobal && util.GetGitRemote() != ""
-			choice, selectedID := hubsync.ShowMatchingGrovesPrompt(groveName, matches, hasGitRemote, autoConfirm)
+			baseSlug := api.Slugify(groveName)
+			nextSlug := hubsync.NextSlugFromMatches(baseSlug, matches)
+			choice, selectedID := hubsync.ShowMatchingGrovesPrompt(groveName, matches, nextSlug, autoConfirm)
 			switch choice {
 			case hubsync.GroveChoiceCancel:
 				return fmt.Errorf("linking cancelled")
