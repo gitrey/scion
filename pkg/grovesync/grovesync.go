@@ -93,8 +93,11 @@ func Sync(ctx context.Context, opts Options) (*Result, error) {
 	// Build the WebDAV remote URL
 	davURL := buildWebDAVURL(opts.HubEndpoint, opts.GroveID)
 
-	// Build rclone on-the-fly remote string
-	remote := fmt.Sprintf(":webdav,url=%s,bearer_token=%s:", davURL, opts.AuthToken)
+	// Build rclone on-the-fly remote string.
+	// Values must be single-quoted so that special characters in the URL
+	// (e.g. "://" in https://) and token are not misinterpreted as
+	// rclone connection-string delimiters.
+	remote := fmt.Sprintf(":webdav,url='%s',bearer_token='%s':", davURL, opts.AuthToken)
 
 	// Set up rclone context with config
 	ctx, ci := fs.AddConfig(ctx)
