@@ -41,6 +41,10 @@ SYSTEMD_UNIT="/etc/systemd/system/scion-chat-app.service"
 
 LISTEN_PORT="${CHAT_APP_LISTEN_PORT:-8443}"
 
+# Temp directory for staging files before installing them.
+TMPDIR="$(mktemp -d)"
+trap 'rm -rf "${TMPDIR}"' EXIT
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -95,7 +99,7 @@ sudo install -m 755 "${BINARY}" "${INSTALL_BIN}/scion-chat-app"
 # 2. Config file
 # ---------------------------------------------------------------------------
 substep "Writing config to ${CONFIG_FILE}"
-cat > /tmp/scion-chat-app.yaml <<EOF
+cat > "${TMPDIR}/scion-chat-app.yaml" <<EOF
 hub:
   endpoint: "${SCION_HUB_ENDPOINT}"
   user: "${CHAT_APP_HUB_USER}"
@@ -130,14 +134,13 @@ logging:
   level: "info"
   format: "json"
 EOF
-sudo install -m 600 -o scion -g scion /tmp/scion-chat-app.yaml "${CONFIG_FILE}"
-rm -f /tmp/scion-chat-app.yaml
+sudo install -m 600 -o scion -g scion "${TMPDIR}/scion-chat-app.yaml" "${CONFIG_FILE}"
 
 # ---------------------------------------------------------------------------
 # 3. Systemd unit
 # ---------------------------------------------------------------------------
 substep "Installing systemd unit"
-cat > /tmp/scion-chat-app.service <<EOF
+cat > "${TMPDIR}/scion-chat-app.service" <<EOF
 [Unit]
 Description=Scion Chat App
 After=network.target scion-hub.service
@@ -156,8 +159,7 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 EOF
-sudo install -m 644 /tmp/scion-chat-app.service "${SYSTEMD_UNIT}"
-rm -f /tmp/scion-chat-app.service
+sudo install -m 644 "${TMPDIR}/scion-chat-app.service" "${SYSTEMD_UNIT}"
 sudo systemctl daemon-reload
 sudo systemctl enable scion-chat-app
 
@@ -175,7 +177,7 @@ else
     DOMAIN="$(head -1 "${CADDYFILE}" | sed 's/ *{$//')"
     TLS_LINE="$(grep '^\s*tls ' "${CADDYFILE}" || true)"
 
-    cat > /tmp/Caddyfile <<EOF
+    cat > "${TMPDIR}/Caddyfile" <<EOF
 ${DOMAIN} {
     handle /chat/* {
         reverse_proxy localhost:${LISTEN_PORT}
@@ -187,14 +189,13 @@ ${DOMAIN} {
 }
 EOF
 
-    if ! diff -q /tmp/Caddyfile "${CADDYFILE}" >/dev/null 2>&1; then
-        sudo install -m 644 -o caddy -g caddy /tmp/Caddyfile "${CADDYFILE}"
+    if ! diff -q "${TMPDIR}/Caddyfile" "${CADDYFILE}" >/dev/null 2>&1; then
+        sudo install -m 644 -o caddy -g caddy "${TMPDIR}/Caddyfile" "${CADDYFILE}"
         sudo systemctl reload caddy
         substep "Caddyfile updated, Caddy reloaded"
     else
         substep "Caddyfile already up to date"
     fi
-    rm -f /tmp/Caddyfile
 fi
 
 # ---------------------------------------------------------------------------
