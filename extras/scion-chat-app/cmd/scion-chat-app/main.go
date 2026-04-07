@@ -19,9 +19,11 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -139,6 +141,9 @@ func main() {
 		os.Exit(1)
 	}
 	log.Info("hub client initialized", "endpoint", cfg.Hub.Endpoint, "admin_user", cfg.Hub.User)
+
+	// Verify hub connectivity by minting a token and listing groves.
+	verifyHubConnectivity(context.Background(), log, minter, signingKey, cfg.Hub.User, cfg.Hub.Endpoint, adminClient)
 
 	// Create identity mapper.
 	idMapper := identity.NewMapper(store, adminClient, cfg.Hub.Endpoint, minter, log.With("component", "identity"))
@@ -278,6 +283,121 @@ func main() {
 	}
 
 	log.Info("scion-chat-app stopped")
+}
+
+// verifyHubConnectivity performs a startup connectivity check against the hub.
+// It mints a fresh admin JWT, logs the token details for debugging, and
+// attempts to list groves. This catches signing key mismatches early, before
+// any chat-event-driven flow exercises the auth path.
+func verifyHubConnectivity(ctx context.Context, log *slog.Logger, minter *identity.TokenMinter, signingKey []byte, hubUser, hubEndpoint string, adminClient hubclient.Client) {
+	log = log.With("component", "hub-verify")
+	log.Info("=== hub connectivity check: START ===")
+
+	// Step 1: Mint a token manually so we can inspect it.
+	token, err := minter.MintToken(hubUser, hubUser, "admin", 15*time.Minute)
+	if err != nil {
+		log.Error("hub-verify: failed to mint token", "error", err)
+		return
+	}
+	log.Info("hub-verify: minted admin token",
+		"token_length", len(token),
+		"token_prefix", token[:min(40, len(token))]+"...",
+	)
+
+	// Step 2: Decode the JWT payload (without verification) to log claims.
+	parts := strings.SplitN(token, ".", 3)
+	if len(parts) == 3 {
+		// JWT header
+		if hdrJSON, err := base64.RawURLEncoding.DecodeString(parts[0]); err == nil {
+			log.Info("hub-verify: JWT header", "header", string(hdrJSON))
+		}
+		// JWT payload
+		if payloadJSON, err := base64.RawURLEncoding.DecodeString(parts[1]); err == nil {
+			log.Info("hub-verify: JWT payload (claims)", "claims", string(payloadJSON))
+			// Pretty-parse to log individual fields
+			var claims map[string]interface{}
+			if json.Unmarshal(payloadJSON, &claims) == nil {
+				for k, v := range claims {
+					log.Debug("hub-verify: claim", "key", k, "value", v)
+				}
+			}
+		}
+	}
+
+	// Step 3: Log key fingerprint used for signing.
+	keyHash := sha256.Sum256(signingKey)
+	log.Info("hub-verify: signing key fingerprint",
+		"key_len", len(signingKey),
+		"sha256_prefix", hex.EncodeToString(keyHash[:8]),
+		"key_b64_sample", base64.StdEncoding.EncodeToString(signingKey)[:min(12, len(signingKey))],
+	)
+
+	// Step 4: Make an HTTP-level request to confirm connectivity & auth,
+	// logging request/response details.
+	verifyURL := strings.TrimRight(hubEndpoint, "/") + "/api/v1/groves"
+	log.Info("hub-verify: sending manual HTTP GET", "url", verifyURL)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, verifyURL, nil)
+	if err != nil {
+		log.Error("hub-verify: failed to build HTTP request", "error", err)
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		log.Error("hub-verify: HTTP request failed", "error", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	// Read response body (limit to 4KB for logging).
+	var bodyBuf [4096]byte
+	n, _ := resp.Body.Read(bodyBuf[:])
+	bodySnippet := string(bodyBuf[:n])
+
+	log.Info("hub-verify: HTTP response",
+		"status", resp.StatusCode,
+		"status_text", resp.Status,
+		"content_type", resp.Header.Get("Content-Type"),
+		"body_length", n,
+		"body", bodySnippet,
+	)
+
+	if resp.StatusCode != http.StatusOK {
+		log.Error("hub-verify: hub returned non-200 status — signing key mismatch or auth failure",
+			"status", resp.StatusCode,
+			"body", bodySnippet,
+		)
+		log.Error("=== hub connectivity check: FAILED ===")
+		return
+	}
+
+	// Step 5: Also exercise the typed client to confirm the hubclient layer works.
+	log.Info("hub-verify: listing groves via hubclient...")
+	listCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
+	grovesResp, err := adminClient.Groves().List(listCtx, nil)
+	if err != nil {
+		log.Error("hub-verify: hubclient.Groves().List() failed", "error", err)
+		log.Error("=== hub connectivity check: FAILED ===")
+		return
+	}
+
+	log.Info("hub-verify: hubclient grove list succeeded",
+		"grove_count", len(grovesResp.Groves),
+	)
+	for i, g := range grovesResp.Groves {
+		log.Info("hub-verify: grove",
+			"index", i,
+			"id", g.ID,
+			"name", g.Name,
+		)
+	}
+
+	log.Info("=== hub connectivity check: PASSED ===")
 }
 
 // loadConfig reads and parses the YAML configuration file.
