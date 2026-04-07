@@ -302,6 +302,11 @@ func loadConfig(path string) (*chatapp.Config, error) {
 // local hub instance. It filters by scion-name=user_signing_key and
 // scion-hub-hostname matching the local hostname, which uniquely identifies
 // the hub in a multi-hub project.
+//
+// When multiple secrets match (e.g. after a hub migration that left a stale
+// secret behind), the function prefers a secret with scion-type=internal
+// (the type the hub currently uses for signing keys) over one with
+// scion-type=environment (a legacy default).
 func discoverSigningKey(ctx context.Context, projectID string) (value, resourceName string, err error) {
 	client, err := secretmanager.NewClient(ctx)
 	if err != nil {
@@ -331,26 +336,54 @@ func discoverSigningKey(ctx context.Context, projectID string) (value, resourceN
 		Filter: filter,
 	})
 
-	secret, err := it.Next()
-	if err == iterator.Done {
+	// Collect all matching secrets so we can prefer the correct one when
+	// stale secrets exist from prior hub migrations.
+	var candidates []*smpb.Secret
+	for {
+		s, err := it.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return "", "", fmt.Errorf("listing secrets: %w", err)
+		}
+		candidates = append(candidates, s)
+	}
+
+	if len(candidates) == 0 {
 		return "", "", fmt.Errorf("no secret with labels scion-name=user_signing_key, scion-hub-hostname=%s found in project %s", hostnameLabel, projectID)
 	}
-	if err != nil {
-		return "", "", fmt.Errorf("listing secrets: %w", err)
+
+	// Pick the best candidate: prefer scion-type=internal (current hub convention)
+	// over any other type (e.g. environment from legacy code).
+	chosen := candidates[0]
+	if len(candidates) > 1 {
+		slog.Warn("multiple signing key secrets found, selecting best match",
+			"count", len(candidates),
+		)
+		for _, c := range candidates {
+			slog.Debug("signing key candidate",
+				"name", c.Name,
+				"labels", c.Labels,
+			)
+			if c.Labels["scion-type"] == "internal" {
+				chosen = c
+			}
+		}
 	}
 
 	slog.Debug("found signing key secret",
-		"name", secret.Name,
-		"labels", secret.Labels,
+		"name", chosen.Name,
+		"labels", chosen.Labels,
 	)
 
 	resp, err := client.AccessSecretVersion(ctx, &smpb.AccessSecretVersionRequest{
-		Name: secret.Name + "/versions/latest",
+		Name: chosen.Name + "/versions/latest",
 	})
 	if err != nil {
-		return "", "", fmt.Errorf("accessing secret %s: %w", secret.Name, err)
+		return "", "", fmt.Errorf("accessing secret %s: %w", chosen.Name, err)
 	}
-	return string(resp.Payload.Data), secret.Name, nil
+	return string(resp.Payload.Data), chosen.Name, nil
 }
 
 // accessSecret fetches the latest version of a GCP Secret Manager secret.

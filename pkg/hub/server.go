@@ -801,14 +801,30 @@ func (s *Server) ensureSigningKey(ctx context.Context, keyName string, existingK
 			if decErr != nil {
 				return nil, fmt.Errorf("failed to decode legacy signing key %s: %w", keyName, decErr)
 			}
-			// Delete the old record first — it may share the same primary key ID
+			// Delete the old secret from the secret backend (e.g. GCP SM) first
+			// so stale secrets don't confuse label-based auto-discovery by
+			// external consumers like scion-chat-app.
+			if hasSecretBackend {
+				if delErr := s.secretBackend.Delete(ctx, keyName, store.ScopeHub, legacyScopeID); delErr != nil {
+					slog.Warn("Failed to delete legacy signing key from secret backend", "key", keyName, "legacyScopeID", legacyScopeID, "error", delErr)
+				} else {
+					slog.Info("Deleted legacy signing key from secret backend", "key", keyName, "legacyScopeID", legacyScopeID)
+				}
+			}
+			// Delete the old DB record — it may share the same primary key ID
 			// so an INSERT with the new scope_id would collide on the PK.
 			if delErr := s.store.DeleteSecret(ctx, keyName, store.ScopeHub, legacyScopeID); delErr != nil {
 				slog.Warn("Failed to delete legacy signing key record", "key", keyName, "legacyScopeID", legacyScopeID, "error", delErr)
 			}
-			// Sync to secret backend (and persist to store under current hub ID).
+			// Sync to secret backend and persist to store under current hub ID.
 			if err := s.syncSigningKeyToBackend(ctx, keyName, val, hubID, isGCPBackend); err != nil {
 				return nil, err
+			}
+			// Always persist the local backup — syncSigningKeyToBackend is a
+			// no-op when there is no secret backend, so the key would be lost
+			// on restart without this explicit save.
+			if persistErr := s.backupSigningKeyToStore(ctx, keyName, val, hubID); persistErr != nil {
+				slog.Warn("Failed to persist migrated signing key backup to store", "key", keyName, "error", persistErr)
 			}
 			return key, nil
 		}

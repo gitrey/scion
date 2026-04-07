@@ -342,6 +342,86 @@ func TestServer_SigningKeyMigration_LegacyHubScopeID(t *testing.T) {
 	}
 }
 
+func TestServer_SigningKeyMigration_DeletesLegacyFromBackend(t *testing.T) {
+	// When migrating signing keys from legacy scope IDs, the old secret
+	// should also be deleted from the secret backend to prevent stale secrets
+	// from confusing label-based auto-discovery by external consumers.
+	s, err := sqlite.New(":memory:")
+	if err != nil {
+		t.Fatalf("failed to create test store: %v", err)
+	}
+	if err := s.Migrate(context.Background()); err != nil {
+		t.Fatalf("failed to migrate test store: %v", err)
+	}
+
+	ctx := context.Background()
+	newHubID := "new-hub-id-abc123"
+	legacyScopeID := "hub"
+
+	// Set up a LocalBackend as the secret backend with the new hub ID.
+	backend := secret.NewLocalBackend(s, newHubID)
+
+	// Seed a legacy key under the old scope ID in both the store and backend.
+	legacyKey := make([]byte, 32)
+	copy(legacyKey, []byte("legacy-user-key-1234567890123456"))
+	encoded := base64.StdEncoding.EncodeToString(legacyKey)
+
+	if err := s.CreateSecret(ctx, &store.Secret{
+		ID: "hub-user_signing_key", Key: SecretKeyUserSigningKey,
+		EncryptedValue: encoded, Scope: store.ScopeHub, ScopeID: legacyScopeID,
+		Description: "legacy user signing key",
+	}); err != nil {
+		t.Fatalf("failed to seed legacy key in store: %v", err)
+	}
+	// Also create in the backend under the legacy scope ID so we can verify deletion.
+	if _, _, err := backend.Set(ctx, &secret.SetSecretInput{
+		Name:       SecretKeyUserSigningKey,
+		Value:      encoded,
+		SecretType: "environment",
+		Scope:      store.ScopeHub,
+		ScopeID:    legacyScopeID,
+	}); err != nil {
+		t.Fatalf("failed to seed legacy key in backend: %v", err)
+	}
+
+	// Verify the legacy key exists in the backend before migration.
+	_, err = backend.Get(ctx, SecretKeyUserSigningKey, store.ScopeHub, legacyScopeID)
+	if err != nil {
+		t.Fatalf("legacy key should exist in backend before migration: %v", err)
+	}
+
+	// Create server with new hub ID — triggers migration.
+	cfg := DefaultServerConfig()
+	cfg.HubID = newHubID
+	cfg.SecretBackend = backend
+	srv, err := New(cfg, s)
+	if err != nil {
+		t.Fatalf("New() failed: %v", err)
+	}
+	t.Cleanup(func() { srv.Shutdown(context.Background()) })
+
+	// The migrated key should match the original.
+	if string(srv.userTokenService.config.SigningKey) != string(legacyKey) {
+		t.Error("migrated signing key should match the legacy key")
+	}
+
+	// The legacy secret should be deleted from the backend.
+	_, err = backend.Get(ctx, SecretKeyUserSigningKey, store.ScopeHub, legacyScopeID)
+	if err == nil {
+		t.Error("legacy signing key should have been deleted from the backend during migration")
+	}
+
+	// The key should now exist under the new hub ID in the backend.
+	sv, err := backend.Get(ctx, SecretKeyUserSigningKey, store.ScopeHub, newHubID)
+	if err != nil {
+		t.Fatalf("signing key should exist under new hub ID in backend: %v", err)
+	}
+	decoded, _ := base64.StdEncoding.DecodeString(sv.Value)
+	if string(decoded) != string(legacyKey) {
+		t.Error("migrated key value should match original")
+	}
+}
+
 func TestServer_SigningKeyBootstrapWithSecretBackend(t *testing.T) {
 	// Verify that when SecretBackend is set in ServerConfig, signing keys
 	// are loaded through it and synced from SQLite to the backend.
