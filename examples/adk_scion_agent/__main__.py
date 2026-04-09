@@ -15,8 +15,10 @@
 """Allow running as `python -m adk_scion_agent`.
 
 Wraps the real entry point with crash reporting so that import errors
-and early startup failures are written to agent-info.json (readable by
-scion) and to stderr (visible if the tmux pane is captured).
+and early startup failures are written to:
+  1. /proc/1/fd/2 (sciontool's stderr → container logs the user can see)
+  2. agent-info.json (readable by scion's status system)
+  3. The process's own stderr (visible in the tmux pane)
 """
 
 import json
@@ -25,9 +27,20 @@ import sys
 import traceback
 
 
+def _log_to_init(message: str) -> None:
+    """Write directly to PID 1 (sciontool) stderr so it appears in container logs."""
+    try:
+        with open("/proc/1/fd/2", "w") as f:
+            f.write(message + "\n")
+            f.flush()
+    except Exception:
+        pass
+
+
 def _report_crash(message: str) -> None:
-    """Write crash details to agent-info.json and stderr."""
+    """Write crash details to container logs, agent-info.json, and stderr."""
     print(message, file=sys.stderr, flush=True)
+    _log_to_init(message)
     try:
         info_path = os.path.join(
             os.environ.get("HOME", "/home/scion"), "agent-info.json"

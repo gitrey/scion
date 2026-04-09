@@ -39,22 +39,34 @@ from google.genai import types
 
 from .agent import root_agent
 
-print("[adk_scion_agent] Modules imported successfully", file=sys.stderr, flush=True)
+
+def _trace(msg: str) -> None:
+    """Log a startup trace to both the tmux pane and container logs."""
+    line = f"[adk_scion_agent] {msg}"
+    print(line, file=sys.stderr, flush=True)
+    try:
+        with open("/proc/1/fd/2", "w") as f:
+            f.write(line + "\n")
+            f.flush()
+    except Exception:
+        pass
+
+
+_trace("Modules imported successfully")
 
 APP_NAME = "adk_scion_agent"
 USER_ID = "scion_user"
 
 
 async def _run(initial_message: str | None) -> None:
-    print("[adk_scion_agent] Creating InMemoryRunner...", file=sys.stderr, flush=True)
+    _trace("Creating InMemoryRunner...")
     runner = InMemoryRunner(agent=root_agent, app_name=APP_NAME)
 
-    print("[adk_scion_agent] Creating session...", file=sys.stderr, flush=True)
+    _trace("Creating session...")
     session = await runner.session_service.create_session(
         app_name=APP_NAME, user_id=USER_ID
     )
-    print("[adk_scion_agent] Session created, entering interactive loop",
-          file=sys.stderr, flush=True)
+    _trace("Session created, entering interactive loop")
 
     async def send(text: str) -> None:
         content = types.Content(role="user", parts=[types.Part(text=text)])
