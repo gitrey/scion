@@ -335,6 +335,7 @@ type V1PluginEntry struct {
 type V1ServerHubConfig struct {
 	Port         int           `json:"port,omitempty" yaml:"port,omitempty" koanf:"port"`
 	Host         string        `json:"host,omitempty" yaml:"host,omitempty" koanf:"host"`
+	HubID        string        `json:"hub_id,omitempty" yaml:"hub_id,omitempty" koanf:"hub_id"`
 	PublicURL    string        `json:"public_url,omitempty" yaml:"public_url,omitempty" koanf:"public_url"`
 	ReadTimeout  string        `json:"read_timeout,omitempty" yaml:"read_timeout,omitempty" koanf:"read_timeout"`
 	WriteTimeout string        `json:"write_timeout,omitempty" yaml:"write_timeout,omitempty" koanf:"write_timeout"`
@@ -896,6 +897,9 @@ func ConvertV1ServerToGlobalConfig(v1 *V1ServerConfig) *GlobalConfig {
 		if v1.Hub.Host != "" {
 			gc.Hub.Host = v1.Hub.Host
 		}
+		if v1.Hub.HubID != "" {
+			gc.Hub.HubID = v1.Hub.HubID
+		}
 		if v1.Hub.PublicURL != "" {
 			gc.Hub.Endpoint = v1.Hub.PublicURL
 		}
@@ -1099,6 +1103,7 @@ func ConvertGlobalToV1ServerConfig(gc *GlobalConfig) *V1ServerConfig {
 	v1Hub := &V1ServerHubConfig{
 		Port:         gc.Hub.Port,
 		Host:         gc.Hub.Host,
+		HubID:        gc.Hub.HubID,
 		PublicURL:    gc.Hub.Endpoint,
 		ReadTimeout:  gc.Hub.ReadTimeout.String(),
 		WriteTimeout: gc.Hub.WriteTimeout.String(),

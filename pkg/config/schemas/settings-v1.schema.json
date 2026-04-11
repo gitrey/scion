@@ -376,6 +376,11 @@
       "properties": {
         "port": { "type": "integer", "default": 9810, "x-env-var": "SCION_SERVER_HUB_PORT" },
         "host": { "type": "string", "default": "0.0.0.0", "x-env-var": "SCION_SERVER_HUB_HOST" },
+        "hub_id": {
+          "type": "string",
+          "description": "Stable hub instance identifier used for hub-scoped secret namespacing.",
+          "x-env-var": "SCION_SERVER_HUB_HUBID"
+        },
         "public_url": {
           "type": "string",
           "format": "uri",

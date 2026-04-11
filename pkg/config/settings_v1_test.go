@@ -1312,6 +1312,7 @@ func TestV1ServerConfig_YAMLRoundTrip(t *testing.T) {
 		Hub: &V1ServerHubConfig{
 			Port:         9810,
 			Host:         "0.0.0.0",
+			HubID:        "test-hub-id",
 			PublicURL:    "https://hub.example.com",
 			ReadTimeout:  "30s",
 			WriteTimeout: "60s",
@@ -1377,6 +1378,7 @@ func TestConvertV1ServerToGlobalConfig_Basic(t *testing.T) {
 		Hub: &V1ServerHubConfig{
 			Port:         9810,
 			Host:         "0.0.0.0",
+			HubID:        "test-hub-id",
 			PublicURL:    "https://hub.example.com",
 			ReadTimeout:  "30s",
 			WriteTimeout: "60s",
@@ -1419,6 +1421,7 @@ func TestConvertV1ServerToGlobalConfig_Basic(t *testing.T) {
 	assert.Equal(t, "debug", gc.LogLevel)
 	assert.Equal(t, "json", gc.LogFormat)
 	assert.Equal(t, 9810, gc.Hub.Port)
+	assert.Equal(t, "test-hub-id", gc.Hub.HubID)
 	assert.Equal(t, "https://hub.example.com", gc.Hub.Endpoint)
 	assert.Equal(t, true, gc.Hub.CORSEnabled)
 	assert.Equal(t, 3600, gc.Hub.CORSMaxAge)
@@ -1474,6 +1477,7 @@ func TestConvertGlobalToV1ServerConfig_RoundTrip(t *testing.T) {
 	gc := DefaultGlobalConfig()
 	gc.LogLevel = "debug"
 	gc.Hub.Port = 9999
+	gc.Hub.HubID = "roundtrip-hub-id"
 	gc.RuntimeBroker.Enabled = true
 	gc.RuntimeBroker.BrokerID = "broker-abc"
 	gc.RuntimeBroker.BrokerName = "test-broker"
@@ -1485,6 +1489,7 @@ func TestConvertGlobalToV1ServerConfig_RoundTrip(t *testing.T) {
 
 	assert.Equal(t, "debug", v1.LogLevel)
 	assert.Equal(t, 9999, v1.Hub.Port)
+	assert.Equal(t, "roundtrip-hub-id", v1.Hub.HubID)
 	assert.Equal(t, true, v1.Broker.Enabled)
 	assert.Equal(t, "broker-abc", v1.Broker.BrokerID)
 	assert.Equal(t, "test-broker", v1.Broker.BrokerName)
@@ -1496,6 +1501,7 @@ func TestConvertGlobalToV1ServerConfig_RoundTrip(t *testing.T) {
 	gc2 := ConvertV1ServerToGlobalConfig(v1)
 	assert.Equal(t, gc.LogLevel, gc2.LogLevel)
 	assert.Equal(t, gc.Hub.Port, gc2.Hub.Port)
+	assert.Equal(t, gc.Hub.HubID, gc2.Hub.HubID)
 	assert.Equal(t, gc.RuntimeBroker.Enabled, gc2.RuntimeBroker.Enabled)
 	assert.Equal(t, gc.RuntimeBroker.BrokerID, gc2.RuntimeBroker.BrokerID)
 	assert.Equal(t, gc.RuntimeBroker.BrokerName, gc2.RuntimeBroker.BrokerName)
@@ -1525,6 +1531,7 @@ server:
   hub:
     port: 9999
     host: "0.0.0.0"
+    hub_id: "settings-hub-id"
   broker:
     enabled: true
     port: 8888
@@ -1544,6 +1551,7 @@ server:
 	assert.Equal(t, "debug", gc.LogLevel)
 	assert.Equal(t, "json", gc.LogFormat)
 	assert.Equal(t, 9999, gc.Hub.Port)
+	assert.Equal(t, "settings-hub-id", gc.Hub.HubID)
 	assert.Equal(t, true, gc.RuntimeBroker.Enabled)
 	assert.Equal(t, 8888, gc.RuntimeBroker.Port)
 	assert.Equal(t, "test-broker-id", gc.RuntimeBroker.BrokerID)
