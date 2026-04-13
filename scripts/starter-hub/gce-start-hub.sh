@@ -316,6 +316,26 @@ if $FULL_DEPLOY; then
         echo "  -> Systemd unit file unchanged"
     fi
 
+    # Install polkit rule to allow scion user to restart its own service
+    # (needed for the web-based "Rebuild Server from Git" maintenance task)
+    POLKIT_RULE="/etc/polkit-1/rules.d/50-scion-hub-restart.rules"
+    cat > /tmp/50-scion-hub-restart.rules <<POLKIT_EOF
+polkit.addRule(function(action, subject) {
+    if (action.id == "org.freedesktop.systemd1.manage-units" &&
+        action.lookup("unit") == "scion-hub.service" &&
+        subject.user == "scion") {
+        return polkit.Result.YES;
+    }
+});
+POLKIT_EOF
+    if ! diff -q /tmp/50-scion-hub-restart.rules "$POLKIT_RULE" >/dev/null 2>&1; then
+        sudo mv /tmp/50-scion-hub-restart.rules "$POLKIT_RULE"
+        echo "  -> Polkit rule installed (scion user can restart scion-hub)"
+    else
+        rm -f /tmp/50-scion-hub-restart.rules
+        echo "  -> Polkit rule unchanged"
+    fi
+
     # Fix certificate permissions for Caddy (only if certs exist)
     if [ -d /etc/letsencrypt/live ]; then
         echo "  -> Fixing certificate permissions..."

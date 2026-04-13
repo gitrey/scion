@@ -321,6 +321,8 @@ Steps:
 
 **Safety:** The rebuild executor only runs on Linux (where systemd is available). Returns an error on other platforms with a message directing the operator to restart manually.
 
+**Privileges:** The restart step uses `systemctl restart` which requires authorization via polkit. The deployment script (`gce-start-hub.sh`) installs a polkit rule at `/etc/polkit-1/rules.d/50-scion-hub-restart.rules` that grants the `scion` user permission to manage the `scion-hub.service` unit without interactive authentication.
+
 **Graceful shutdown:** The hub process handles the restart by building the new binary, installing it, then signaling itself via systemd. The new process picks up the existing database and configuration.
 
 #### Rebuild Web Executor
