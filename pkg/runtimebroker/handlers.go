@@ -1336,8 +1336,12 @@ func (s *Server) getLogs(w http.ResponseWriter, r *http.Request, id, groveID str
 	}
 
 	if found.GrovePath != "" {
+		agentSlug := found.Slug
+		if agentSlug == "" {
+			agentSlug = found.Name
+		}
 		agentLogPath := filepath.Join(config.GetAgentHomePath(
-			filepath.Join(found.GrovePath, ".scion"), found.Slug,
+			filepath.Join(found.GrovePath, ".scion"), agentSlug,
 		), "agent.log")
 		if data, err := os.ReadFile(agentLogPath); err == nil {
 			w.Header().Set("Content-Type", "text/plain")
@@ -1350,7 +1354,11 @@ func (s *Server) getLogs(w http.ResponseWriter, r *http.Request, id, groveID str
 
 	// Fallback: read container stdout logs (resolve runtime for auxiliary runtimes)
 	rt := s.resolveRuntimeForAgent(ctx, id, groveID)
-	logs, err := rt.GetLogs(ctx, id)
+	containerID := found.ContainerID
+	if containerID == "" {
+		containerID = id
+	}
+	logs, err := rt.GetLogs(ctx, containerID)
 	if err != nil {
 		RuntimeError(w, "Failed to get logs: "+err.Error())
 		return

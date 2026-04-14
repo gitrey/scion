@@ -567,6 +567,174 @@ func TestAgentLogsAllowsGet(t *testing.T) {
 	}
 }
 
+func TestAgentLogsReadsFileWhenSlugEmpty(t *testing.T) {
+	t.Helper()
+	t.Setenv("HOME", t.TempDir())
+
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpDir := t.TempDir()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(origWd) })
+
+	dotScion := filepath.Join(tmpDir, ".scion")
+	if err := os.Mkdir(dotScion, 0755); err != nil {
+		t.Fatal(err)
+	}
+	settingsYAML := `schema_version: "1"
+active_profile: local
+profiles:
+    local:
+        runtime: mock
+runtimes:
+    mock:
+        type: mock
+`
+	if err := os.WriteFile(filepath.Join(dotScion, "settings.yaml"), []byte(settingsYAML), 0644); err != nil {
+		t.Fatal(err)
+	}
+	for _, tmpl := range []string{"default", "claude"} {
+		if err := os.MkdirAll(filepath.Join(dotScion, "templates", tmpl), 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Create agent.log at the path derived from Name (not Slug)
+	agentHome := filepath.Join(dotScion, "agents", "my-agent", "home")
+	if err := os.MkdirAll(agentHome, 0755); err != nil {
+		t.Fatal(err)
+	}
+	logContent := "hello from agent.log"
+	if err := os.WriteFile(filepath.Join(agentHome, "agent.log"), []byte(logContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	getLogsCalled := false
+	rt := &runtime.MockRuntime{
+		NameFunc: func() string { return "docker" },
+		GetLogsFunc: func(_ context.Context, _ string) (string, error) {
+			getLogsCalled = true
+			return "", fmt.Errorf("should not be called")
+		},
+	}
+
+	mgr := &mockManager{
+		agents: []api.AgentInfo{
+			{
+				ID:        "container-abc",
+				Name:      "my-agent",
+				Slug:      "", // empty slug — handler must fall back to Name
+				GrovePath: tmpDir,
+				Phase:     "running",
+			},
+		},
+	}
+
+	cfg := DefaultServerConfig()
+	cfg.BrokerID = "test-broker-id"
+	cfg.BrokerName = "test-host"
+	cfg.ForceRuntime = "mock"
+	srv := New(cfg, mgr, rt)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/agents/my-agent/logs", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d; body: %s", http.StatusOK, w.Code, w.Body.String())
+	}
+	if body := w.Body.String(); body != logContent {
+		t.Fatalf("expected body %q, got %q", logContent, body)
+	}
+	if getLogsCalled {
+		t.Fatal("runtime.GetLogs should not have been called when agent.log is readable")
+	}
+}
+
+func TestAgentLogsFallbackUsesContainerID(t *testing.T) {
+	t.Helper()
+	t.Setenv("HOME", t.TempDir())
+
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpDir := t.TempDir()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(origWd) })
+
+	dotScion := filepath.Join(tmpDir, ".scion")
+	if err := os.Mkdir(dotScion, 0755); err != nil {
+		t.Fatal(err)
+	}
+	settingsYAML := `schema_version: "1"
+active_profile: local
+profiles:
+    local:
+        runtime: mock
+runtimes:
+    mock:
+        type: mock
+`
+	if err := os.WriteFile(filepath.Join(dotScion, "settings.yaml"), []byte(settingsYAML), 0644); err != nil {
+		t.Fatal(err)
+	}
+	for _, tmpl := range []string{"default", "claude"} {
+		if err := os.MkdirAll(filepath.Join(dotScion, "templates", tmpl), 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// No agent.log on disk — forces fallback to container logs
+	var receivedID string
+	rt := &runtime.MockRuntime{
+		NameFunc: func() string { return "docker" },
+		GetLogsFunc: func(_ context.Context, id string) (string, error) {
+			receivedID = id
+			return "container log output", nil
+		},
+	}
+
+	mgr := &mockManager{
+		agents: []api.AgentInfo{
+			{
+				ID:          "mygrove--foo", // grove-prefixed container name
+				ContainerID: "mygrove--foo",
+				Name:        "foo",
+				Slug:        "",
+				Phase:       "running",
+			},
+		},
+	}
+
+	cfg := DefaultServerConfig()
+	cfg.BrokerID = "test-broker-id"
+	cfg.BrokerName = "test-host"
+	cfg.ForceRuntime = "mock"
+	srv := New(cfg, mgr, rt)
+
+	// Request uses the slug "foo", not the full container ID
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/agents/foo/logs", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d; body: %s", http.StatusOK, w.Code, w.Body.String())
+	}
+	if receivedID != "mygrove--foo" {
+		t.Fatalf("expected GetLogs to receive container ID %q, got %q", "mygrove--foo", receivedID)
+	}
+	if body := w.Body.String(); body != "container log output" {
+		t.Fatalf("expected body %q, got %q", "container log output", body)
+	}
+}
+
 // envCapturingManager captures the environment variables passed to Start().
 // Used for testing that Hub credentials are properly set.
 type envCapturingManager struct {
