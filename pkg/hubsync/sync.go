@@ -639,7 +639,7 @@ func RemoveSyncedAgent(grovePath, agentName string) {
 	}
 }
 
-// CompareAgents compares local agents with Hub agents for the current broker.
+// CompareAgents compares local agents with all Hub agents in the grove.
 func CompareAgents(ctx context.Context, hubCtx *HubContext) (*SyncResult, error) {
 	result := &SyncResult{}
 
@@ -653,13 +653,14 @@ func CompareAgents(ctx context.Context, hubCtx *HubContext) (*SyncResult, error)
 	}
 	debugf("Local agents found: %v", localAgents)
 
-	// Get Hub agents for this grove and broker
+	// Get all Hub agents in the grove (not filtered by broker ID).
+	// We fetch all agents so that agents created from the Hub UI or assigned
+	// to a different/stale broker identity are visible during comparison.
 	ctxTimeout, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	opts := &hubclient.ListAgentsOptions{
-		GroveID:         hubCtx.GroveID,
-		RuntimeBrokerID: hubCtx.BrokerID,
+		GroveID: hubCtx.GroveID,
 	}
 
 	resp, err := hubCtx.Client.GroveAgents(hubCtx.GroveID).List(ctxTimeout, opts)
@@ -762,6 +763,11 @@ func CompareAgents(ctx context.Context, hubCtx *HubContext) (*SyncResult, error)
 			if a.Status == "pending" {
 				result.Pending = append(result.Pending, AgentRef{Name: a.Name, ID: a.ID})
 				debugf("Agent %s (id=%s) is pending, not requiring sync", a.Name, a.ID)
+			} else if a.RuntimeBrokerID != hubCtx.BrokerID {
+				// Agent belongs to a different broker — always treat as remote-only.
+				result.RemoteOnly = append(result.RemoteOnly, AgentRef{Name: a.Name, ID: a.ID})
+				debugf("Agent %s (id=%s) assigned to different broker %s, treating as remote-only",
+					a.Name, a.ID, a.RuntimeBrokerID)
 			} else if lastSyncedAt.IsZero() || !a.Created.Before(lastSyncedAt) {
 				// First sync or agent created at/after our last sync — another broker
 				// created it, or we just created it via Hub (watermark set to creation

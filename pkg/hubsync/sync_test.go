@@ -2095,6 +2095,154 @@ func TestStaleLocalAgentSurvivesSyncCycle(t *testing.T) {
 	}
 }
 
+// TestCompareAgents_HubAgentDifferentBrokerMatchesLocal verifies the primary
+// bug fix: a hub-created agent with a different RuntimeBrokerID is recognized
+// as InSync when it also exists locally, and the API request does NOT include
+// a runtimeBrokerId query parameter filter.
+func TestCompareAgents_HubAgentDifferentBrokerMatchesLocal(t *testing.T) {
+	groveID := "test-grove-id"
+	localBrokerID := "local-broker-id"
+	hubBrokerID := "hub-broker-id" // different from local
+
+	tmpDir := t.TempDir()
+
+	// Create a local agent named "laptop"
+	agentDir := filepath.Join(tmpDir, "agents", "laptop")
+	if err := os.MkdirAll(agentDir, 0755); err != nil {
+		t.Fatalf("failed to create agent dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(agentDir, "scion-agent.yaml"), []byte("harness: claude"), 0644); err != nil {
+		t.Fatalf("failed to write scion-agent.yaml: %v", err)
+	}
+
+	var capturedQuery string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/agents") {
+			// Capture the query string to verify no runtimeBrokerId filter
+			capturedQuery = r.URL.RawQuery
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"agents": []map[string]interface{}{
+					{
+						"id":              "agent-uuid-laptop",
+						"name":            "laptop",
+						"status":          "running",
+						"runtimeBrokerId": hubBrokerID,
+						"created":         time.Now().Add(-time.Hour).Format(time.RFC3339Nano),
+					},
+				},
+				"serverTime": time.Now().UTC().Format(time.RFC3339Nano),
+			})
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	client, err := hubclient.New(server.URL)
+	if err != nil {
+		t.Fatalf("failed to create hub client: %v", err)
+	}
+
+	hubCtx := &HubContext{
+		Client:    client,
+		GroveID:   groveID,
+		BrokerID:  localBrokerID,
+		GrovePath: tmpDir,
+		Settings:  &config.Settings{},
+	}
+
+	result, err := CompareAgents(context.Background(), hubCtx)
+	if err != nil {
+		t.Fatalf("CompareAgents failed: %v", err)
+	}
+
+	// The local agent "laptop" matches the hub agent "laptop" by name → InSync
+	if len(result.InSync) != 1 || result.InSync[0] != "laptop" {
+		t.Errorf("expected InSync=[laptop], got %v", result.InSync)
+	}
+	if len(result.ToRegister) != 0 {
+		t.Errorf("expected no ToRegister, got %v", result.ToRegister)
+	}
+
+	// Verify the API request did NOT include runtimeBrokerId filter
+	if strings.Contains(capturedQuery, "runtimeBrokerId") {
+		t.Errorf("API request should NOT include runtimeBrokerId filter, got query: %s", capturedQuery)
+	}
+}
+
+// TestCompareAgents_HubOnlyAgentDifferentBrokerIsRemoteOnly verifies the safety
+// guard: a hub-only agent assigned to a different broker is always classified as
+// RemoteOnly, never as ToRemove, regardless of watermark timing.
+func TestCompareAgents_HubOnlyAgentDifferentBrokerIsRemoteOnly(t *testing.T) {
+	groveID := "test-grove-id"
+	localBrokerID := "local-broker-id"
+	otherBrokerID := "other-broker-id"
+	watermark := time.Date(2026, 3, 3, 12, 0, 0, 0, time.UTC)
+
+	tmpDir := t.TempDir()
+
+	// No local agents — just create the agents directory
+	if err := os.MkdirAll(filepath.Join(tmpDir, "agents"), 0755); err != nil {
+		t.Fatalf("failed to create agents dir: %v", err)
+	}
+
+	// Set a watermark so the agent (created before watermark) would normally
+	// be classified as ToRemove if it were on the same broker.
+	if err := config.SaveGroveState(tmpDir, &config.GroveState{
+		LastSyncedAt: watermark.Format(time.RFC3339Nano),
+	}); err != nil {
+		t.Fatalf("failed to save state: %v", err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/agents") {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"agents": []map[string]interface{}{
+					{
+						"id":              "agent-uuid-remote",
+						"name":            "remote-agent",
+						"status":          "running",
+						"runtimeBrokerId": otherBrokerID,
+						"created":         watermark.Add(-time.Hour).Format(time.RFC3339Nano),
+					},
+				},
+				"serverTime": time.Now().UTC().Format(time.RFC3339Nano),
+			})
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	client, err := hubclient.New(server.URL)
+	if err != nil {
+		t.Fatalf("failed to create hub client: %v", err)
+	}
+
+	hubCtx := &HubContext{
+		Client:    client,
+		GroveID:   groveID,
+		BrokerID:  localBrokerID,
+		GrovePath: tmpDir,
+		Settings:  &config.Settings{},
+	}
+
+	result, err := CompareAgents(context.Background(), hubCtx)
+	if err != nil {
+		t.Fatalf("CompareAgents failed: %v", err)
+	}
+
+	// Agent is on a different broker → RemoteOnly, never ToRemove
+	if len(result.RemoteOnly) != 1 || result.RemoteOnly[0].Name != "remote-agent" {
+		t.Errorf("expected RemoteOnly=[remote-agent], got %v", result.RemoteOnly)
+	}
+	if len(result.ToRemove) != 0 {
+		t.Errorf("expected no ToRemove (agent belongs to different broker), got %v", result.ToRemove)
+	}
+}
+
 // TestAddRemoveSyncedAgent verifies individual add/remove operations.
 func TestAddRemoveSyncedAgent(t *testing.T) {
 	tmpDir := t.TempDir()
